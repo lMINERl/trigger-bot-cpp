@@ -9,10 +9,12 @@
 #include <vector>
 #include <tlhelp32.h>
 
-#define RET_ADDRESS true
-#define RET_VALUE false
+enum class ReturnCode {
+    ADDRESS = 0x1,
+    VALUE = 0x0
+};
 
-auto findGameWindow = [](LPCSTR windowName = NULL) {
+auto findGameWindow = [](LPCSTR windowName) {
     return FindWindowEx(NULL, 0, 0, windowName);
 };
 auto getWindowProcessId = [](HWND gameWindow) {
@@ -36,6 +38,8 @@ auto getProcessBaseAddress = [](DWORD proc, const char* modName) {
     uintptr_t modBaseAddr = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, proc);
 
+    std::cout << hSnap << std::endl;
+
     if (hSnap != INVALID_HANDLE_VALUE) {
         MODULEENTRY32 modEntry;
         modEntry.dwSize = sizeof(modEntry);
@@ -56,22 +60,29 @@ auto writeMemory = [](HANDLE window, LPVOID address, DWORD value) {
     // WriteProcessMemory(window, (BYTE *)address, &value, sizeof(&value), NULL);
     WriteProcessMemory(window, address, &value, sizeof(&value), NULL);
 };
-auto readMemory = [](HANDLE phandle, DWORD_PTR baseAddress, std::vector<DWORD> offsets, bool getAddress = false) {
+auto readMemory = [](HANDLE phandle, DWORD_PTR baseAddress, std::vector<DWORD> offsets, ReturnCode code) {
     LPVOID address_PTR = (LPVOID)baseAddress;
-    DWORD temp = 0x0;
+    DWORD64 temp = 0x0;
     ReadProcessMemory(phandle, address_PTR, &temp, sizeof(temp), NULL);
     // std::cout << std::hex << address_PTR << "-" << temp << std::endl;
-    for (unsigned int i = 0; i < offsets.size(); ++i) {
+    for (uint_fast8_t i = 0; i < offsets.size(); ++i) {
         address_PTR = (LPVOID)(temp + offsets[i]);
         ReadProcessMemory(phandle, address_PTR, &temp, sizeof(temp), NULL);
         // std::cout << std::hex << address_PTR << "-" << temp << std::endl;
     }
-    return getAddress ? address_PTR : (LPVOID)temp;
+    switch (code) {
+    case ReturnCode::ADDRESS:
+        return address_PTR;
+    case ReturnCode::VALUE:
+        return (LPVOID)temp;
+    default:
+        return (LPVOID)0x0;
+    }
 };
 
-auto setInterval = [](std::function<void(void)> func, uint_fast32_t interval, std::function<bool(void)> condition) {
+auto setInterval = [](std::function<void(void)> func, uint_fast32_t interval, std::function<bool(void)> condition) constexpr {
     std::thread([func, interval, condition]() {
-        WINBOOL s = FALSE;
+        bool s = false;
         do {
             s = condition();
             if (s) {
@@ -107,14 +118,21 @@ auto sendClick = [](INPUT mouse[2], int repeat, DWORD delay) {
     } while (repeat > 0);
 };
 
+// HHOOK mouseHook;
+// auto mouseHook = [](int nCode, WPARAM wParam, LPARAM lParam) {
+//     PKBDLLHOOKSTRUCT k = (PKBDLLHOOKSTRUCT)(lParam);
+//     POINT p;
+
+// };
+
 int main() {
-    LPCSTR game = "[#] F.E.A.R. 3 [#]";
+    LPCSTR game = "[#] Grand Theft Auto V [#]";
     HWND gamewindow = findGameWindow(game);
     DWORD processId = gamewindow ? getWindowProcessId(gamewindow) : 0x0;
     HANDLE phandle = processId ? openWindowProcessId(processId) : 0x0;
 
     if (!processId || !gamewindow || !phandle) {
-        return 0;
+        return EXIT_FAILURE;
     }
 
     auto baseAddress = getProcessBaseAddress(processId, (const char*)game);
@@ -126,33 +144,40 @@ int main() {
         "\n---Game is Running---" << std::endl;
 
 
-    uint_fast32_t checkInterval = 79;
-    DWORD mouseInterval = 100;
+    uint_fast32_t checkInterval = 80;
+    DWORD mouseDelay = 100;
     std::cout << std::dec << "Check Interval: " << checkInterval <<
-        "\nMouseInterval: " << mouseInterval <<
+        "\nMouseInterval: " << mouseDelay <<
         std::endl;
 
     INPUT mouse[2];
-    auto getEnemeyHover = [phandle, baseAddress, &mouse, mouseInterval]() {
-        auto value = readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, RET_VALUE);
+    // ReturnCode r_code;
+
+    // r_code = VALUE;
+    // std::cout<<r_code
+    auto getEnemeyHover = [phandle, baseAddress, &mouse, mouseDelay]() {
+        // auto value = readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, RET_VALUE); fear
+        // auto value = readMemory(phandle, baseAddress + 0x2FA5D4, { }, RET_VALUE); //cod4
+        auto result = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::VALUE); // gta5
+        auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
         // std::cout << "value" << value << std::endl;
         if (value) {
-            // std::cout << "hit" << std::endl;
-            sendClick(mouse, 1, mouseInterval);
+            // std::cout << "hit " << value << std::endl;
+            sendClick(mouse, 1, mouseDelay);
         }
     };
 
     // writeMemory(phandle, value, 0x42CA0000); has issue with data type conversion dicimal to float
 
-    setInterval(getEnemeyHover, checkInterval, []() { return (WINBOOL)GetAsyncKeyState(VK_RBUTTON); });
+    setInterval(getEnemeyHover, checkInterval, []() { return (bool)GetAsyncKeyState(VK_RBUTTON); });
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)" << std::endl;
 
     std::cout << "PGUP to Close" << std::endl;
     while (!GetAsyncKeyState(VK_PRIOR)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
     std::cout << "Closed";
     CloseHandle(phandle);
-    return 0;
+    return EXIT_SUCCESS;
 }
