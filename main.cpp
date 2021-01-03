@@ -38,8 +38,6 @@ auto getProcessBaseAddress = [](DWORD proc, const char* modName) constexpr {
     uintptr_t modBaseAddr = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, proc);
 
-    std::cout << hSnap << std::endl;
-
     if (hSnap != INVALID_HANDLE_VALUE) {
         MODULEENTRY32 modEntry = {};
         modEntry.dwSize = sizeof(modEntry);
@@ -63,11 +61,11 @@ auto writeMemory = [](HANDLE window, LPVOID address, DWORD value) constexpr {
 auto readMemory = [](HANDLE phandle, DWORD_PTR baseAddress, std::vector<DWORD> offsets, ReturnCode code) constexpr {
     LPVOID address_PTR = (LPVOID)baseAddress;
     DWORD64 temp = 0x0;
-    ReadProcessMemory(phandle, address_PTR, &temp, sizeof(temp), NULL);
+    ReadProcessMemory(phandle, address_PTR, &temp, sizeof(DWORD32), NULL);
     // std::cout << std::hex << address_PTR << "-" << temp << std::endl;
     for (uint_fast8_t i = 0; i < offsets.size(); ++i) {
         address_PTR = (LPVOID)(temp + offsets[i]);
-        ReadProcessMemory(phandle, address_PTR, &temp, sizeof(temp), NULL);
+        ReadProcessMemory(phandle, address_PTR, &temp, sizeof(DWORD32), NULL);
         // std::cout << std::hex << address_PTR << "-" << temp << std::endl;
     }
     switch (code) {
@@ -90,7 +88,7 @@ auto setInterval = [](std::function<void(void)> func, uint_fast32_t interval, st
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(interval));
         } while (true);
-        }).detach();
+    }).detach();
 };
 
 auto sendKey = [](WORD key, INPUT kyBrd[2], unsigned int repeat) constexpr {
@@ -126,7 +124,8 @@ auto sendClick = [](INPUT mouse[2], int repeat, DWORD delay) constexpr {
 // };
 
 int main() {
-    LPCSTR game = "[#] Grand Theft Auto V [#]";
+    // LPCSTR game = "[#] Grand Theft Auto V [#]";
+    LPCSTR game = "[#] F.E.A.R. 3 [#]";
     HWND gamewindow = findGameWindow(game);
     DWORD processId = gamewindow ? getWindowProcessId(gamewindow) : 0x0;
     HANDLE phandle = processId ? openWindowProcessId(processId) : 0x0;
@@ -156,12 +155,12 @@ int main() {
     // r_code = VALUE;
     // std::cout<<r_code
     auto getEnemeyHover = [phandle, baseAddress, &mouse, mouseDelay]() {
-        // auto value = readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, RET_VALUE); fear
-        // auto value = readMemory(phandle, baseAddress + 0x2FA5D4, { }, RET_VALUE); //cod4
-        auto result = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::VALUE); // gta5
-        auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
-        // std::cout << "value" << value << std::endl;
-        if (value) {
+        auto result = readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::VALUE); //fear
+        // auto result = readMemory(phandle, baseAddress + 0x2FA5D4, { }, ReturnCode::VALUE); //cod4
+        // auto result = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::VALUE); // gta5
+        // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
+        // std::cout << "value" << result << std::endl;
+        if (result) {
             // std::cout << "hit " << value << std::endl;
             sendClick(mouse, 1, mouseDelay);
         }
@@ -173,7 +172,7 @@ int main() {
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)" << std::endl;
 
     std::cout << "PGUP to Close" << std::endl;
-    while (!GetAsyncKeyState(VK_PRIOR)) {
+    while (!GetAsyncKeyState(VK_PRIOR) && findGameWindow(game)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
