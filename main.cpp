@@ -14,11 +14,11 @@ enum class ReturnCode {
     VALUE = 0x0
 };
 
-auto findGameWindow = [](LPCSTR windowName) {
+auto findGameWindow = [](LPCSTR windowName) constexpr {
     return FindWindowEx(NULL, 0, 0, windowName);
 };
-auto getWindowProcessId = [](HWND gameWindow) {
-    DWORD processId;
+auto getWindowProcessId = [](HWND gameWindow)  constexpr {
+    DWORD processId = 0x0;
     if (!gameWindow) {
         std::cout << "Game window Not found" << std::endl;
         return processId;
@@ -26,7 +26,7 @@ auto getWindowProcessId = [](HWND gameWindow) {
     GetWindowThreadProcessId(gameWindow, &processId);
     return processId;
 };
-auto openWindowProcessId = [](DWORD processId) {
+auto openWindowProcessId = [](DWORD processId) constexpr {
     if (!processId) {
         std::cout << "Failed to get process id" << std::endl;
         return (HANDLE)0;
@@ -34,14 +34,14 @@ auto openWindowProcessId = [](DWORD processId) {
     return OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
 };
 
-auto getProcessBaseAddress = [](DWORD proc, const char* modName) {
+auto getProcessBaseAddress = [](DWORD proc, const char* modName) constexpr {
     uintptr_t modBaseAddr = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, proc);
 
     std::cout << hSnap << std::endl;
 
     if (hSnap != INVALID_HANDLE_VALUE) {
-        MODULEENTRY32 modEntry;
+        MODULEENTRY32 modEntry = {};
         modEntry.dwSize = sizeof(modEntry);
         if (Module32First(hSnap, &modEntry)) {
             do {
@@ -56,11 +56,11 @@ auto getProcessBaseAddress = [](DWORD proc, const char* modName) {
     return modBaseAddr;
 };
 
-auto writeMemory = [](HANDLE window, LPVOID address, DWORD value) {
+auto writeMemory = [](HANDLE window, LPVOID address, DWORD value) constexpr {
     // WriteProcessMemory(window, (BYTE *)address, &value, sizeof(&value), NULL);
     WriteProcessMemory(window, address, &value, sizeof(&value), NULL);
 };
-auto readMemory = [](HANDLE phandle, DWORD_PTR baseAddress, std::vector<DWORD> offsets, ReturnCode code) {
+auto readMemory = [](HANDLE phandle, DWORD_PTR baseAddress, std::vector<DWORD> offsets, ReturnCode code) constexpr {
     LPVOID address_PTR = (LPVOID)baseAddress;
     DWORD64 temp = 0x0;
     ReadProcessMemory(phandle, address_PTR, &temp, sizeof(temp), NULL);
@@ -93,7 +93,7 @@ auto setInterval = [](std::function<void(void)> func, uint_fast32_t interval, st
         }).detach();
 };
 
-auto sendKey = [](WORD key, INPUT kyBrd[2], unsigned int repeat) {
+auto sendKey = [](WORD key, INPUT kyBrd[2], unsigned int repeat) constexpr {
     while (repeat > 0) {
         kyBrd[0].type = kyBrd[1].type = INPUT_KEYBOARD;
         kyBrd[0].ki.wVk = kyBrd[1].ki.wVk = 0;
@@ -106,7 +106,7 @@ auto sendKey = [](WORD key, INPUT kyBrd[2], unsigned int repeat) {
         --repeat;
     }
 };
-auto sendClick = [](INPUT mouse[2], int repeat, DWORD delay) {
+auto sendClick = [](INPUT mouse[2], int repeat, DWORD delay) constexpr {
     mouse[0].type = mouse[1].type = INPUT_MOUSE;
     mouse[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
     mouse[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
