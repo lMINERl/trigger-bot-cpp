@@ -135,6 +135,10 @@ int main() {
         "\n---Game is Running---" << std::endl;
 
 
+
+    auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; //fear
+    // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
+    // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
     uint_fast32_t checkInterval{ 80 };
     DWORD mouseDelay{ 100 };
     std::cout << std::dec << "Check Interval: " << checkInterval <<
@@ -142,10 +146,8 @@ int main() {
         std::endl;
 
     INPUT mouse[2];
-    auto getEnemeyHover{ [phandle, baseAddress, &mouse, mouseDelay]() {
-        auto result = readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::VALUE); //fear
-        // auto result = readMemory(phandle, baseAddress + 0x2FA5D4, { }, ReturnCode::VALUE); //cod4
-        // auto result = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::VALUE); // gta5
+    auto getEnemeyHover{ [phandle, enemeyHoverAdress, &mouse, mouseDelay]() {
+        auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE); //fear
         // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
         // std::cout << "value" << result << std::endl;
         if (result) {
