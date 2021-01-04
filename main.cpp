@@ -21,7 +21,7 @@ auto findGameWindow{ [](LPCSTR windowName) constexpr {
 auto getWindowProcessId{ [](HWND gameWindow)  constexpr {
     DWORD processId { 0x0 };
     if (!gameWindow) {
-        std::cout << "Game window Not found" << std::endl;
+        std::cout << "Game window Not found\n";
         return processId;
     }
     GetWindowThreadProcessId(gameWindow, &processId);
@@ -124,6 +124,7 @@ int main() {
     auto phandle{ processId ? openWindowProcessId(processId) : 0x0 };
 
     if (!processId || !gamewindow || !phandle) {
+        std::cout << game << " Game not found \n";
         return EXIT_FAILURE;
     }
 
@@ -133,15 +134,15 @@ int main() {
         "\nProcessId: " << processId <<
         "\nHandle: " << phandle <<
         "\nBaseAddress: " << std::hex << (DWORD)baseAddress <<
-        "\n---Game is Running---" << std::endl;
+        "\n---Game is Running---\n";
 
 
 
     auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; //fear
     // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
     // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
-    uint_fast32_t checkInterval{ 80 };
-    DWORD mouseDelay{ 90 };
+    constexpr uint_fast32_t checkInterval{ 80 };
+    constexpr DWORD mouseDelay{ 90 };
     std::cout << std::dec << "Check Interval: " << checkInterval <<
         "\nMouseInterval: " << mouseDelay <<
         std::endl;
@@ -163,14 +164,14 @@ int main() {
         return (bool)GetAsyncKeyState(VK_RBUTTON);
     });
 
-    std::cout << "Trigger bot is activated (aim to enemies to auto shoot)" << std::endl;
+    std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\n";
 
-    std::cout << "hold PGUP to Close" << std::endl;
+    std::cout << "hold PGUP to Close\n";
     while (!GetAsyncKeyState(VK_PRIOR) && findGameWindow(game)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
-    std::cout << "Closed";
+    std::cout << "Closed\n";
     CloseHandle(phandle);
     return EXIT_SUCCESS;
 }
