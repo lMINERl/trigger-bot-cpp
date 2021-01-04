@@ -27,6 +27,7 @@ auto getWindowProcessId{ [](HWND gameWindow)  constexpr {
     GetWindowThreadProcessId(gameWindow, &processId);
     return processId;
 } };
+
 auto openWindowProcessId{ [](DWORD processId) constexpr {
     if (!processId) {
         std::cout << "Failed to get process id" << std::endl;
@@ -140,7 +141,7 @@ int main() {
     // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
     // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
     uint_fast32_t checkInterval{ 80 };
-    DWORD mouseDelay{ 100 };
+    DWORD mouseDelay{ 90 };
     std::cout << std::dec << "Check Interval: " << checkInterval <<
         "\nMouseInterval: " << mouseDelay <<
         std::endl;
@@ -164,9 +165,9 @@ int main() {
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)" << std::endl;
 
-    std::cout << "PGUP to Close" << std::endl;
+    std::cout << "hold PGUP to Close" << std::endl;
     while (!GetAsyncKeyState(VK_PRIOR) && findGameWindow(game)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
     std::cout << "Closed";
