@@ -154,7 +154,7 @@ int main() {
         // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
         // std::cout << "value" << result << std::endl;
         if (result) {
-            std::cout << "hit " << result << std::endl;
+            // std::cout << "hit " << std::dec << result << std::endl;
             sendClick(mouse, 1, mouseDelay);
         }
     } };
@@ -168,7 +168,7 @@ int main() {
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\n";
 
     std::cout << "hold PGUP to Close\n";
-    while (!GetAsyncKeyState(VK_PRIOR) && findGameWindow(game)) {
+    while (!GetAsyncKeyState(VK_PRIOR) && static_cast<bool>(getWindowProcessId(gamewindow))) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
