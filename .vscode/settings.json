@@ -13,6 +13,8 @@
   "C_Cpp.vcFormat.newLine.closeBraceSameLine.emptyFunction": true,
   "C_Cpp.vcFormat.space.removeBeforeSemicolon": true,
   "C_Cpp.vcFormat.newLine.closeBraceSameLine.emptyType": true,
+  "C_Cpp.vcFormat.indent.caseContents": true,
+  "C_Cpp.vcFormat.indent.caseLabels": true,
   "C_Cpp.vcFormat.space.afterComma": true,
   "C_Cpp.vcFormat.indent.lambdaBracesWhenParameter": false,
   "C_Cpp.vcFormat.newLine.scopeBracesOnSeparateLines": true,
