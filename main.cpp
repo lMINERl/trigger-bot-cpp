@@ -19,41 +19,41 @@ const std::function<HWND(LPCSTR)> findGameWindow{ [](LPCSTR windowName) constexp
 } };
 
 const auto getWindowProcessId{ [](const HWND gameWindow)  constexpr {
-    DWORD processId { 0x0 };
+    DWORD winProcId { 0x0 };
     if (!gameWindow) {
         std::cout << "Game window Not found\n";
-        return processId;
+        return winProcId;
     }
-    GetWindowThreadProcessId(gameWindow, &processId);
-    return processId;
+    GetWindowThreadProcessId(gameWindow, &winProcId);
+    return winProcId;
 } };
 
-const auto openWindowProcessId{ [](const DWORD processId) constexpr {
-    if (!processId) {
+const auto openWindowProcessId{ [](const DWORD winProcId) constexpr {
+    if (!winProcId) {
         std::cout << "Failed to get process id\n";
         return static_cast<HANDLE>(0);
     }
-    return OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
+    return OpenProcess(PROCESS_ALL_ACCESS, FALSE, winProcId);
 } };
 
-const auto getProcessBaseAddress{ [](const DWORD proc, const char* modName) constexpr {
-    uintptr_t modBaseAddr { 0x0 };
+const auto getModuleEntry{ [](const DWORD proc, std::string modName) constexpr {
     HANDLE hSnap { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, proc) };
-
-    if (hSnap != INVALID_HANDLE_VALUE) {
-        MODULEENTRY32 modEntry  {};
-        modEntry.dwSize = sizeof(modEntry);
-        if (Module32First(hSnap, &modEntry)) {
-            do {
-                if (strcmp((const char*)modEntry.szModule, modName)) {
-                    modBaseAddr = (uintptr_t)modEntry.modBaseAddr;
-                    break;
-                }
-            } while (Module32Next(hSnap, &modEntry));
-        }
+    MODULEENTRY32 modEntry  {};
+    const auto CLEAN_RETURN {[&hSnap,&modEntry]() constexpr {
+        CloseHandle(hSnap);
+        return modEntry;
+    }};
+    if (hSnap == INVALID_HANDLE_VALUE) {
+        return CLEAN_RETURN();
     }
-    CloseHandle(hSnap);
-    return modBaseAddr;
+    modEntry.dwSize = sizeof(modEntry);
+    if (!Module32First(hSnap, &modEntry)) {
+        return CLEAN_RETURN();
+    }
+    while (modName.compare(modEntry.szModule) != 0) {
+        Module32Next(hSnap, &modEntry);
+    }
+    return CLEAN_RETURN();
 } };
 
 const auto writeMemory{ [](const HANDLE window,const LPVOID address,const  DWORD value) constexpr {
@@ -118,30 +118,42 @@ const auto sendClick{ [](INPUT mouse[2], unsigned int repeat,const DWORD delay) 
 
 int main() {
     // LPCSTR game = "[#] Grand Theft Auto V [#]";
-    LPCSTR game{ "[#] F.E.A.R. 3 [#]" };
+    // LPCSTR game{ "[#] F.E.A.R. 3 [#]" };
+
+    constexpr LPCSTR game{ "Alien Swarm: Reactive Drop" };
     const HWND gamewindow{ findGameWindow(game) };
-    const auto processId{ gamewindow ? getWindowProcessId(gamewindow) : 0x0 };
-    const auto phandle{ processId ? openWindowProcessId(processId) : 0x0 };
+    const auto winProcId{ gamewindow ? getWindowProcessId(gamewindow) : 0x0 };
+    const auto phandle{ winProcId ? openWindowProcessId(winProcId) : 0x0 };
 
-    if (!processId || !gamewindow || !phandle) {
+    const auto CLEAN_EXIT{ [&phandle](int exitCode) constexpr {
+        CloseHandle(phandle);
+        return exitCode;
+    } };
+
+    if (!winProcId || !gamewindow || !phandle) {
         std::cout << game << " Game not found \n";
-        return EXIT_FAILURE;
+        return CLEAN_EXIT(EXIT_FAILURE);
     }
+    constexpr LPCSTR moduleName{ "reactivedrop.exe" };
+    const auto modEntry{ getModuleEntry(winProcId, moduleName) };
 
-    const auto baseAddress{ getProcessBaseAddress(processId, (const char*)game) };
+    constexpr LPCSTR procName{ "client.dll" };
+    const auto procEntry{ getModuleEntry(winProcId,procName) };
 
     std::cout << "Game: " << game <<
         "\nWindow HWND: " << gamewindow <<
-        "\nProcessId: " << processId <<
+        "\nProcessId: " << winProcId <<
         "\nHandle: " << phandle <<
-        "\nBaseAddress: " << std::hex << static_cast<DWORD>(baseAddress) <<
+        "\nmodBaseAddress: " << std::hex << (DWORD_PTR)modEntry.modBaseAddr <<
         "\n---Game is Running---\n";
 
 
 
-    const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; //fear
-    // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
-    // auto enemeyHoverAdress = readMemory(phandle, baseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
+    // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; //fear
+    const auto enemeyHoverAdress{ readMemory(phandle, (DWORD_PTR)procEntry.modBaseAddr + 0x84A3F0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
+    std::cout << std::hex << enemeyHoverAdress << " hov\n";
+    // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
+    // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
     constexpr uint_fast32_t checkInterval{ 80 };
     constexpr DWORD mouseDelay{ 90 };
     std::cout << std::dec << "Check Interval: " << checkInterval <<
@@ -153,7 +165,7 @@ int main() {
         auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE); //fear
         // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
         // std::cout << "value" << result << std::endl;
-        if (result) {
+        if (reinterpret_cast<uint_fast64_t>(result) != 0xFFFFFFFF ) {
             // std::cout << "hit " << std::dec << result << std::endl;
             sendClick(mouse, 1, mouseDelay);
         }
@@ -162,17 +174,17 @@ int main() {
     // writeMemory(phandle, value, 0x42CA0000); has issue with data type conversion dicimal to float
 
     setInterval(getEnemeyHover, checkInterval, []() constexpr {
-        return static_cast<bool>(GetAsyncKeyState(VK_RBUTTON));
+        // return static_cast<bool>(GetAsyncKeyState(VK_RBUTTON));
+        return true;
     });
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\n";
 
     std::cout << "hold PGUP to Close\n";
-    while (!GetAsyncKeyState(VK_PRIOR) && static_cast<bool>(getWindowProcessId(gamewindow))) {
+    while (!GetAsyncKeyState(VK_PRIOR)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
 
     std::cout << "Closed\n";
-    CloseHandle(phandle);
-    return EXIT_SUCCESS;
+    return CLEAN_EXIT(EXIT_SUCCESS);
 }
