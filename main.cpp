@@ -11,7 +11,8 @@
 
 enum class Keys {
     CAPSLOCK = VK_CAPITAL,
-    PGUP = VK_PRIOR
+    PGUP = VK_PRIOR,
+    R = 0x52
 };
 enum class Mouse {
     RIGHT_RELESE = WM_RBUTTONUP,
@@ -42,6 +43,7 @@ namespace constants {
     inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 80 };
     inline constexpr DWORD mouseDelay{ 97 };
+    inline constexpr DWORD keyboardDelay{ 100 };
 }
 
 const auto findGameWindow{ [](LPCSTR windowName) constexpr->HWND {
@@ -120,16 +122,27 @@ const auto setInterval{ [](const std::function<void(void)> func, const uint_fast
     }).detach();
 } };
 
-const auto sendKey{ [](WORD key, INPUT kyBrd[2], unsigned int repeat) constexpr->void {
+const auto sendKey{ [](WORD key, INPUT kyBrd[2], unsigned int repeat,const DWORD delay) constexpr->void {
+
+    PostMessage(findGameWindow(constants::windowName),WM_KEYDOWN,(WPARAM)Keys::R,1);
+
+    keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | 0,0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+    keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,0);
+
     kyBrd[0].type = kyBrd[1].type = INPUT_KEYBOARD;
-    kyBrd[0].ki.wVk = kyBrd[1].ki.wVk = 0;
-    kyBrd[0].ki.dwFlags = KEYEVENTF_SCANCODE;
-    kyBrd[0].ki.wScan = kyBrd[1].ki.wScan = key;
-    kyBrd[1].ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
+    kyBrd[0].ki.time = 0;
+    kyBrd[0].ki.dwExtraInfo = 0;
+    kyBrd[0].ki.dwFlags = 0;
+    kyBrd[0].ki.wVk = key;
+
+
     do {
+        std::cout << key << std::endl;
         SendInput(1, &kyBrd[0], sizeof(INPUT));
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        SendInput(1, &kyBrd[1], sizeof(INPUT));
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+        kyBrd[0].ki.dwFlags = KEYEVENTF_KEYUP;
+        SendInput(1, &kyBrd[0], sizeof(INPUT));
         --repeat;
     } while (repeat > 0);
 } };
@@ -150,7 +163,7 @@ const auto captureKeyPress{ [](WPARAM wParam,LPARAM vkCode)constexpr ->void {
         case Keys::CAPSLOCK: // toggle
             if (wParam == WM_KEYUP) {
                 flag::triggerActive = !flag::triggerActive;
-                std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
+                // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
         break;
         case Keys::PGUP:
@@ -179,13 +192,13 @@ const auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam) con
        if (nCode != HC_ACTION)
            return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
 
-       //    std::cout << global::kbrdStruct.vkCode << " " << wParam << std::endl;
-          if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
-              global::kbrdStruct = (*(KBDLLHOOKSTRUCT*)lParam);
-              PostMessage(NULL,(UINT)wParam,wParam,global::kbrdStruct.vkCode);
-          }
-          return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
-      } };
+       //   std::cout << global::kbrdStruct.vkCode << " " << wParam << std::endl;
+         if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
+             global::kbrdStruct = (*(KBDLLHOOKSTRUCT*)lParam);
+             PostMessage(NULL,(UINT)wParam,wParam,global::kbrdStruct.vkCode);
+         }
+         return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
+     } };
 const auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT FASTCALL {
     if (nCode != HC_ACTION)
         return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
@@ -231,6 +244,7 @@ int main() {
 
     // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; //fear
     const auto enemeyHoverAdress{ readMemory(phandle, (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
+    const auto ammoAddress{ readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x00823970,{0x20,0x840},ReturnCode::ADDRESS) };
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
 
@@ -238,12 +252,11 @@ int main() {
         "\nMouseInterval: " << constants::mouseDelay <<
         std::endl;
 
-    INPUT mouse[2] = {};
+    INPUT mouse[2] = { 0 };
     const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &mouse]() constexpr ->void {
         auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE);
         // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
         // std::cout << "value" << result << std::endl;
-
         if (reinterpret_cast<uint_fast64_t>(result) != 0xFFFFFFFF) {
             // std::cout << "hit " << std::dec << result << std::endl;
             sendClick(mouse, 1, constants::mouseDelay);
@@ -251,19 +264,22 @@ int main() {
     } };
 
     // writeMemory(phandle, value, 0x42CA0000); has issue with data type conversion dicimal to float
-
+    INPUT keyboard[2] = { 0 };
+    const auto getAmmo{ [phandle,ammoAddress,&keyboard]() constexpr->void {
+        auto result = readMemory(phandle,(DWORD_PTR)ammoAddress,{},ReturnCode::VALUE);
+        if (reinterpret_cast<uint_fast64_t>(result) == 2) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+            std::cout << "should press" << std::endl;
+            sendKey((WORD)Keys::R,keyboard,1,constants::keyboardDelay);
+        }
+    } };
 
     setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
-
+    // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\n";
 
     std::cout << "PGUP to Close\n";
-
-
-
-
-
 
     if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, (HINSTANCE)GetModuleHandle(NULL), 0))) {
         std::cout << "Failed to install keybord Hook! \n";
