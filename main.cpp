@@ -11,8 +11,7 @@
 
 enum class Keys {
     CAPSLOCK = VK_CAPITAL,
-    PGUP = VK_PRIOR,
-    LSHIFT = VK_LSHIFT
+    PGUP = VK_PRIOR
 };
 enum class Mouse {
     RIGHT_RELESE = WM_RBUTTONUP,
@@ -149,16 +148,13 @@ const auto sendClick{ [](INPUT mouse[2], unsigned int repeat,const DWORD delay) 
 const auto captureKeyPress{ [](WPARAM wParam,LPARAM vkCode)constexpr ->void {
     switch ((Keys)vkCode) {
         case Keys::CAPSLOCK: // toggle
-            if (wParam == WM_KEYUP)
+            if (wParam == WM_KEYUP) {
                 flag::triggerActive = !flag::triggerActive;
-            std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
+                std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
+            }
         break;
         case Keys::PGUP:
             flag::terminate = true;
-        break;
-        case Keys::LSHIFT: // onhold 
-            flag::triggerActive = (wParam == WM_KEYDOWN) ? true : false;
-            std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
         break;
         default:
         break;
@@ -242,7 +238,7 @@ int main() {
         "\nMouseInterval: " << constants::mouseDelay <<
         std::endl;
 
-    INPUT mouse[2]={};
+    INPUT mouse[2] = {};
     const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &mouse]() constexpr ->void {
         auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE);
         // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
@@ -262,7 +258,7 @@ int main() {
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\n";
 
-    std::cout << "hold PGUP to Close\n";
+    std::cout << "PGUP to Close\n";
 
 
 
