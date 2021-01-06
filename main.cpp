@@ -42,7 +42,7 @@ namespace constants {
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" };
     inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 80 };
-    inline constexpr DWORD mouseDelay{ 97 };
+    inline constexpr DWORD mouseDelay{ 90 };
     inline constexpr DWORD keyboardDelay{ 100 };
 }
 
@@ -115,7 +115,7 @@ const auto setInterval{ [](const std::function<void(void)> func, const uint_fast
         do {
             while (condition()) {
                 func();
-                std::this_thread::sleep_for(std::chrono::milliseconds(interval));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(interval));
         } while (true);
