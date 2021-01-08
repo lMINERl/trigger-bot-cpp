@@ -213,10 +213,8 @@ int main() {
     const auto phandle{ winProcId ? openWindowProcessId(winProcId) : 0x0 };
 
     // Clean side effects
-    const auto CLEAN_EXIT{ [&phandle](int exitCode) constexpr -> int {
+    std::function<int(int)> CLEAN_EXIT{ [&phandle](int exitCode) constexpr -> int {
         CloseHandle(phandle);
-        UnhookWindowsHookEx(global::kbrdHook);
-        UnhookWindowsHookEx(global::mouseHook);
         return exitCode;
     } };
 
@@ -274,11 +272,21 @@ int main() {
     if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, modEntry.hModule, modEntryThreadId))) {
         std::cout << "Failed to install keybord Hook! \n";
         return CLEAN_EXIT(EXIT_FAILURE);
+    } else {
+        CLEAN_EXIT = [CLEAN_EXIT](int exitCode)constexpr->int {
+            UnhookWindowsHookEx(global::kbrdHook);
+            return CLEAN_EXIT(exitCode);
+        };
     }
 
     if (!(global::mouseHook = SetWindowsHookEx(WH_MOUSE_LL, lowLevelMouseProc, modEntry.hModule, modEntryThreadId))) {
         std::cout << "Failed to install mouse Hook! \n";
         return CLEAN_EXIT(EXIT_FAILURE);
+    } else {
+        CLEAN_EXIT = [CLEAN_EXIT](int exitCode)constexpr->int {
+            UnhookWindowsHookEx(global::mouseHook);
+            return CLEAN_EXIT(exitCode);
+        };
     }
 
     setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
