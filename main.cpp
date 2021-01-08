@@ -116,8 +116,8 @@ constexpr auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress,
     }
 } };
 
-constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_fast32_t interval, const std::function<bool(void)> condition) constexpr ->void {
-    std::thread([func, interval, condition]() {
+constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_fast32_t interval, const std::function<bool(void)> condition) constexpr {
+    return std::thread([func, interval, condition]() {
         do {
             while (condition()) {
                 func();
@@ -125,7 +125,7 @@ constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(interval));
         } while (true);
-    }).detach();
+    });
 } };
 
 constexpr auto sendKey{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
@@ -206,68 +206,55 @@ constexpr auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)const
 
 int main() {
 
-    // LPCSTR game = "[#] Grand Theft Auto V [#]";
-    // LPCSTR game{ "[#] F.E.A.R. 3 [#]" };
+    // get window data HWND/ID/HANDLE
+
     const HWND gamewindow{ findGameWindow(constants::windowName) };
     const auto winProcId{ gamewindow ? getWindowProcessId(gamewindow) : 0x0 };
     const auto phandle{ winProcId ? openWindowProcessId(winProcId) : 0x0 };
 
-    // Clean side effects
+    // used for cleaning side-effects as program progress should be re-initialized after each side effect
     std::function<int(int)> CLEAN_EXIT{ [&phandle](int exitCode) constexpr -> int {
         CloseHandle(phandle);
         return exitCode;
     } };
-
+    // the window specified are not there
     if (!winProcId || !gamewindow || !phandle) {
         std::cout << constants::windowName << " Game not found \n";
         return CLEAN_EXIT(EXIT_FAILURE);
     }
+    // current module and thier threads ids
     const auto modEntry{ getModuleEntry(winProcId, constants::moduleName) };
     const auto procEntry{ getModuleEntry(winProcId,constants::procName) };
     const auto modEntryThreadId = GetThreadId(modEntry.hModule);
     const auto procEntryThreadId = GetThreadId(procEntry.hModule);
+
+    // loggs << should be edited or make logger
 
     std::cout << "Game: " << constants::windowName <<
         "\nWindow HWND: " << gamewindow <<
         "\nProcessId: " << winProcId <<
         "\nHandle: " << phandle <<
         "\nmodBaseAddress: " << std::hex << (DWORD_PTR)modEntry.modBaseAddr <<
+        "\nMemory Check Interval: " << constants::checkInterval <<
+        "\nMouse Interval: " << constants::mouseDelay <<
+        "\nKeyboard Interval: " << constants::keyboardDelay <<
         "\n---Game is Running---\n";
 
 
 
-    // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; //fear
+    // calculate the address  based on entry base address
+
+    // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; // F.E.A.R. 3
+
     const auto enemeyHoverAdress{ readMemory(phandle, (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
-    const auto ammoAddress{ readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x00823970,{0x20,0x840},ReturnCode::ADDRESS) };
+
+    const auto ammoAddress{ readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x00823970,{0x20,0x840},ReturnCode::ADDRESS) }; // //Alien Swarm: Reactive Drop
+
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
+
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x1F46790, { }, ReturnCode::ADDRESS); // gta5
 
-    std::cout << std::dec << "Check Interval: " << constants::checkInterval <<
-        "\nMouseInterval: " << constants::mouseDelay <<
-        std::endl;
-
-    const auto getAmmo{ [phandle,ammoAddress,&gamewindow]() constexpr ->void {
-            auto result = readMemory(phandle,(DWORD_PTR)ammoAddress,{},ReturnCode::VALUE);
-            if (reinterpret_cast<uint_fast64_t>(result) < 7) {
-
-                std::cout << "should press" << std::endl;
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                sendKey(gamewindow,WM_KEYDOWN ,(WPARAM)(Keys::R));
-            }
-        } };
-    const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &gamewindow]() constexpr ->void {
-        auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE);
-        // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
-        // std::cout << "value" << result << std::endl;
-        if (reinterpret_cast<uint_fast64_t>(result) != game::noEnemeyHover) {
-            // std::cout << "hit " << std::dec << result << std::endl;
-            sendClick(gamewindow,WM_LBUTTONDOWN,VK_LBUTTON);
-        }
-    } };
-
     // writeMemory(phandle, value, 0x42CA0000); has issue with data type conversion dicimal to float
-
-    std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP to Close\n";
 
     if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, modEntry.hModule, modEntryThreadId))) {
         std::cout << "Failed to install keybord Hook! \n";
@@ -289,8 +276,41 @@ int main() {
         };
     }
 
-    setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
+    std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP to Close\n";
+
+    // intervals callback
+    const auto getAmmo{ [phandle,ammoAddress,&gamewindow]() constexpr ->void {
+                auto result = readMemory(phandle,(DWORD_PTR)ammoAddress,{},ReturnCode::VALUE);
+                if (reinterpret_cast<uint_fast64_t>(result) < 7) {
+
+                    std::cout << "should press" << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    sendKey(gamewindow,WM_KEYDOWN ,(WPARAM)(Keys::R));
+                }
+            } };
+
+    const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &gamewindow]() constexpr ->void {
+        auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE);
+        // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
+        // std::cout << "value" << result << std::endl;
+        if (reinterpret_cast<uint_fast64_t>(result) != game::noEnemeyHover) {
+            // std::cout << "hit " << std::dec << result << std::endl;
+            sendClick(gamewindow,WM_LBUTTONDOWN,VK_LBUTTON);
+        }
+        } };
+
+    // run on separate thread
+    //  thread to be deattached
+    auto hoverInterval{ setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;}) };
+
+    // destroy thread
+    CLEAN_EXIT = [CLEAN_EXIT, &hoverInterval](int exitCode)constexpr->int {
+        hoverInterval.~thread();
+        return CLEAN_EXIT(exitCode);
+    };
+
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
+    hoverInterval.detach();
 
     while (
         (GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) &&
