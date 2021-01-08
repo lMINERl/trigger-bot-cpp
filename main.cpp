@@ -128,9 +128,9 @@ constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_
     }).detach();
 } };
 
-constexpr auto sendKey{ [](const HWND windowName,WPARAM vkCode) constexpr->void {
-    PostMessage(windowName,WM_KEYDOWN,vkCode,MAPVK_VSC_TO_VK);
-    std::this_thread::sleep_for(std::chrono::milliseconds(constants::mouseDelay));
+constexpr auto sendKey{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
+    PostMessage(windowName,msg,vkCode,MAPVK_VSC_TO_VK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(constants::keyboardDelay));
     // keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | 0,0);
     // std::this_thread::sleep_for(std::chrono::milliseconds(delay));
     // keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,0);
@@ -254,7 +254,7 @@ int main() {
 
                 std::cout << "should press" << std::endl;
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                sendKey(FindWindow(constants::procName,constants::windowName) ,(WPARAM)(Keys::R));
+                sendKey(gamewindow,WM_KEYDOWN ,(WPARAM)(Keys::R));
             }
         } };
     const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &gamewindow]() constexpr ->void {
