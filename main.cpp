@@ -15,6 +15,8 @@ enum class Keys {
     R = 0x52
 };
 enum class Mouse {
+    HOLD,
+    RELEASE,
     RIGHT_RELESE = WM_RBUTTONUP,
     RIGHT_HOLD = WM_RBUTTONDOWN
 };
@@ -37,19 +39,23 @@ namespace flag {
     inline bool terminate{ false };
     inline bool holdMouseRight{ false };
 }
+namespace game {
+    inline constexpr unsigned int noEnemeyHover{ 0xFFFFFFFF };
+}
 namespace constants {
     inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" };
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" };
     inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 80 };
-    inline constexpr DWORD mouseDelay{ 90 };
+    inline constexpr DWORD mouseDelay{ 45 };
     inline constexpr DWORD keyboardDelay{ 100 };
+    inline constexpr HWND consoleHWND{ NULL };
 }
 
-const auto findGameWindow{ [](LPCSTR windowName) constexpr->HWND {
+constexpr auto findGameWindow{ [](LPCSTR windowName) constexpr->HWND {
     return FindWindowEx(NULL, 0, 0, windowName);
 } };
-const auto getWindowProcessId{ [](const HWND gameWindow)  constexpr->DWORD {
+constexpr auto getWindowProcessId{ [](const HWND gameWindow)  constexpr->DWORD {
     DWORD winProcId { 0x0 };
     if (!gameWindow) {
         std::cout << "Game window Not found\n";
@@ -58,7 +64,7 @@ const auto getWindowProcessId{ [](const HWND gameWindow)  constexpr->DWORD {
     GetWindowThreadProcessId(gameWindow, &winProcId);
     return winProcId;
 } };
-const auto openWindowProcessId{ [](const DWORD winProcId) constexpr -> HANDLE {
+constexpr auto openWindowProcessId{ [](const DWORD winProcId) constexpr -> HANDLE {
     if (!winProcId) {
         std::cout << "Failed to get process id\n";
         return static_cast<HANDLE>(0);
@@ -66,7 +72,7 @@ const auto openWindowProcessId{ [](const DWORD winProcId) constexpr -> HANDLE {
     return OpenProcess(PROCESS_ALL_ACCESS, FALSE, winProcId);
 } };
 
-const auto getModuleEntry{ [](const DWORD proc, std::string modName) constexpr -> MODULEENTRY32 {
+constexpr auto getModuleEntry{ [](const DWORD proc, std::string modName) constexpr -> MODULEENTRY32 {
     HANDLE hSnap { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, proc) };
     MODULEENTRY32 modEntry  {};
     const auto CLEAN_RETURN {[&hSnap,&modEntry]() constexpr {
@@ -86,11 +92,11 @@ const auto getModuleEntry{ [](const DWORD proc, std::string modName) constexpr -
     return CLEAN_RETURN();
 } };
 
-const auto writeMemory{ [](const HANDLE window,const LPVOID address,const  DWORD value) constexpr ->void {
+constexpr auto writeMemory{ [](const HANDLE window,const LPVOID address,const  DWORD value) constexpr ->void {
     // WriteProcessMemory(window, (BYTE *)address, &value, sizeof(&value), NULL);
     WriteProcessMemory(window, address, &value, sizeof(&value), NULL);
 } };
-const auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress, const std::vector<DWORD> offsets,const ReturnCode code) constexpr->LPVOID {
+constexpr auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress, const std::vector<DWORD> offsets,const ReturnCode code) constexpr->LPVOID {
     LPVOID address_PTR { (LPVOID)baseAddress };
     DWORD64 temp { 0x0 };
     ReadProcessMemory(phandle, address_PTR, &temp, sizeof(DWORD32), NULL);
@@ -110,7 +116,7 @@ const auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress, con
     }
 } };
 
-const auto setInterval{ [](const std::function<void(void)> func, const uint_fast32_t interval, const std::function<bool(void)> condition) constexpr ->void {
+constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_fast32_t interval, const std::function<bool(void)> condition) constexpr ->void {
     std::thread([func, interval, condition]() {
         do {
             while (condition()) {
@@ -122,46 +128,39 @@ const auto setInterval{ [](const std::function<void(void)> func, const uint_fast
     }).detach();
 } };
 
-const auto sendKey{ [](WORD key, INPUT kyBrd[2], unsigned int repeat,const DWORD delay) constexpr->void {
+constexpr auto sendKey{ [](const HWND windowName,WPARAM vkCode) constexpr->void {
+    PostMessage(windowName,WM_KEYDOWN,vkCode,MAPVK_VSC_TO_VK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(constants::mouseDelay));
+    // keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | 0,0);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+    // keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,0);
 
-    PostMessage(findGameWindow(constants::windowName),WM_KEYDOWN,(WPARAM)Keys::R,1);
-
-    keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | 0,0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-    keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,0);
-
-    kyBrd[0].type = kyBrd[1].type = INPUT_KEYBOARD;
-    kyBrd[0].ki.time = 0;
-    kyBrd[0].ki.dwExtraInfo = 0;
-    kyBrd[0].ki.dwFlags = 0;
-    kyBrd[0].ki.wVk = key;
+    // kyBrd[0].type = kyBrd[1].type = INPUT_KEYBOARD;
+    // kyBrd[0].ki.time = 0;
+    // kyBrd[0].ki.dwExtraInfo = 0;
+    // kyBrd[0].ki.dwFlags = 0;
+    // kyBrd[0].ki.wVk = key;
 
 
-    do {
-        std::cout << key << std::endl;
-        SendInput(1, &kyBrd[0], sizeof(INPUT));
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-        kyBrd[0].ki.dwFlags = KEYEVENTF_KEYUP;
-        SendInput(1, &kyBrd[0], sizeof(INPUT));
-        --repeat;
-    } while (repeat > 0);
-} };
-const auto sendClick{ [](INPUT mouse[2], unsigned int repeat,const DWORD delay) constexpr->void {
-    mouse[0].type = mouse[1].type = INPUT_MOUSE;
-    mouse[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-    mouse[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-    do {
-        SendInput(1, &mouse[0], sizeof(INPUT));
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-        SendInput(1, &mouse[1], sizeof(INPUT));
-        --repeat;
-    } while (repeat > 0);
+    // do {
+    //     std::cout << key << std::endl;
+    //     SendInput(1, &kyBrd[0], sizeof(INPUT));
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+    //     kyBrd[0].ki.dwFlags = KEYEVENTF_KEYUP;
+    //     SendInput(1, &kyBrd[0], sizeof(INPUT));
+    //     --repeat;
+    // } while (repeat > 0);
+    } };
+constexpr auto sendClick{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
+    PostMessage(windowName,msg,vkCode,MAPVK_VSC_TO_VK);
+    std::this_thread::sleep_for(std::chrono::milliseconds(constants::mouseDelay));
+    // PostMessage(windowName,WM_LBUTTONUP,vkCode,MAPVK_VSC_TO_VK);
 } };
 
-const auto captureKeyPress{ [](WPARAM wParam,LPARAM vkCode)constexpr ->void {
-    switch ((Keys)vkCode) {
+constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
+    switch ((Keys)msg.wParam) {
         case Keys::CAPSLOCK: // toggle
-            if (wParam == WM_KEYUP) {
+            if (msg.message == WM_KEYUP) {
                 flag::triggerActive = !flag::triggerActive;
                 // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
@@ -172,10 +171,9 @@ const auto captureKeyPress{ [](WPARAM wParam,LPARAM vkCode)constexpr ->void {
         default:
         break;
     }
-
 } };
-const auto captureMousePress{ [](DWORD wm_mButton)constexpr->void {
-    switch ((Mouse)wm_mButton) {
+constexpr auto captureMousePress{ [](const MSG& msg)constexpr ->void {
+    switch ((Mouse)msg.wParam) {
         case Mouse::RIGHT_HOLD:
             flag::holdMouseRight = true;
         break;
@@ -187,24 +185,20 @@ const auto captureMousePress{ [](DWORD wm_mButton)constexpr->void {
     }
 } };
 
-const auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam) constexpr ->LRESULT FASTCALL {
-
+constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam) constexpr ->LRESULT FASTCALL {
        if (nCode != HC_ACTION)
            return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
-
-       //   std::cout << global::kbrdStruct.vkCode << " " << wParam << std::endl;
-         if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
-             global::kbrdStruct = (*(KBDLLHOOKSTRUCT*)lParam);
-             PostMessage(NULL,(UINT)wParam,wParam,global::kbrdStruct.vkCode);
-         }
-         return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
-     } };
-const auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT FASTCALL {
+       if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
+           global::kbrdStruct = (*(KBDLLHOOKSTRUCT*)lParam);
+           PostMessage(constants::consoleHWND,(UINT)wParam,global::kbrdStruct.vkCode,MAPVK_VSC_TO_VK);
+       }
+       return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
+   } };
+constexpr auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT FASTCALL {
     if (nCode != HC_ACTION)
         return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
-
         if (wParam == WM_RBUTTONDOWN || wParam == WM_RBUTTONUP) {
-            PostMessage(NULL,wParam,wParam,wParam);
+            PostMessage(constants::consoleHWND,(UINT)wParam,wParam,MAPVK_VSC_TO_VK);
         }
 
     return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
@@ -232,6 +226,8 @@ int main() {
     }
     const auto modEntry{ getModuleEntry(winProcId, constants::moduleName) };
     const auto procEntry{ getModuleEntry(winProcId,constants::procName) };
+    const auto modEntryThreadId = GetThreadId(modEntry.hModule);
+    const auto procEntryThreadId = GetThreadId(procEntry.hModule);
 
     std::cout << "Game: " << constants::windowName <<
         "\nWindow HWND: " << gamewindow <<
@@ -252,51 +248,51 @@ int main() {
         "\nMouseInterval: " << constants::mouseDelay <<
         std::endl;
 
-    INPUT mouse[2] = { 0 };
-    const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &mouse]() constexpr ->void {
+    const auto getAmmo{ [phandle,ammoAddress,&gamewindow]() constexpr ->void {
+            auto result = readMemory(phandle,(DWORD_PTR)ammoAddress,{},ReturnCode::VALUE);
+            if (reinterpret_cast<uint_fast64_t>(result) < 7) {
+
+                std::cout << "should press" << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                sendKey(FindWindow(constants::procName,constants::windowName) ,(WPARAM)(Keys::R));
+            }
+        } };
+    const auto getEnemeyHover{ [phandle, enemeyHoverAdress, &gamewindow]() constexpr ->void {
         auto result = readMemory(phandle, (DWORD_PTR)enemeyHoverAdress , { }, ReturnCode::VALUE);
         // auto value = static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(result));
         // std::cout << "value" << result << std::endl;
-        if (reinterpret_cast<uint_fast64_t>(result) != 0xFFFFFFFF) {
+        if (reinterpret_cast<uint_fast64_t>(result) != game::noEnemeyHover) {
             // std::cout << "hit " << std::dec << result << std::endl;
-            sendClick(mouse, 1, constants::mouseDelay);
+            sendClick(gamewindow,WM_LBUTTONDOWN,VK_LBUTTON);
         }
     } };
 
     // writeMemory(phandle, value, 0x42CA0000); has issue with data type conversion dicimal to float
-    INPUT keyboard[2] = { 0 };
-    const auto getAmmo{ [phandle,ammoAddress,&keyboard]() constexpr->void {
-        auto result = readMemory(phandle,(DWORD_PTR)ammoAddress,{},ReturnCode::VALUE);
-        if (reinterpret_cast<uint_fast64_t>(result) == 2) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-            std::cout << "should press" << std::endl;
-            sendKey((WORD)Keys::R,keyboard,1,constants::keyboardDelay);
-        }
-    } };
 
-    setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
-    // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
+    std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP to Close\n";
 
-    std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\n";
-
-    std::cout << "PGUP to Close\n";
-
-    if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, (HINSTANCE)GetModuleHandle(NULL), 0))) {
+    if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, modEntry.hModule, modEntryThreadId))) {
         std::cout << "Failed to install keybord Hook! \n";
         return CLEAN_EXIT(EXIT_FAILURE);
     }
 
-    if (!(global::mouseHook = SetWindowsHookEx(WH_MOUSE_LL, lowLevelMouseProc, (HINSTANCE)GetModuleHandle(NULL), 0))) {
+    if (!(global::mouseHook = SetWindowsHookEx(WH_MOUSE_LL, lowLevelMouseProc, modEntry.hModule, modEntryThreadId))) {
         std::cout << "Failed to install mouse Hook! \n";
         return CLEAN_EXIT(EXIT_FAILURE);
     }
 
+    setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
+    // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
+
     while (
-        (GetMessage(&global::msg, NULL, 0, 0) > 0) &&
-        static_cast<int>(global::msg.lParam) != static_cast<int>(Keys::PGUP) // exit program on page up
+        (GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) &&
+        static_cast<int>(global::msg.wParam) != static_cast<int>(Keys::PGUP) // exit program on page up
         ) {
-        captureKeyPress(global::msg.wParam, global::msg.lParam);
-        captureMousePress(global::msg.wParam);
+
+        if (global::msg.message == WM_KEYUP || global::msg.message == WM_KEYDOWN)
+            captureKeyPress(global::msg);
+        else if (global::msg.message == (UINT)Mouse::RIGHT_HOLD || global::msg.message == (UINT)Mouse::RIGHT_RELESE)
+            captureMousePress(global::msg);
     }
 
     std::cout << "Closed\n";
