@@ -35,28 +35,29 @@ namespace global {
     inline HHOOK mouseHook{};
 }
 namespace flag {
-    inline bool triggerActive{ false };
-    inline bool terminate{ false };
-    inline bool holdMouseRight{ false };
-    inline bool shouldFire{ false };
+    inline bool triggerActive{ false }; // trigger bot is active
+    inline bool terminate{ false }; // terminate the program 
+    inline bool holdMouseRight{ false }; // user is holding the right mouse button
+    inline bool shouldFire{ false }; // the trigger bot should fire
 }
 namespace game {
-    inline LPCVOID noEnemeyHover{ (LPCVOID)0xFFFFFFFF };
-    inline constexpr LPCVOID noFriendHover{ 0x0 };
+    inline LPCVOID noEnemeyHover{ (LPCVOID)0xFFFFFFFF }; // aims to no enemy
+    inline constexpr LPCVOID noFriendHover{ 0x0 }; // aims to no friend
 }
 namespace constants {
-    inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" };
-    inline constexpr LPCSTR moduleName{ "reactivedrop.exe" };
-    inline constexpr LPCSTR procName{ "client.dll" };
-    inline constexpr uint_fast32_t checkInterval{ 180 };
-    inline constexpr DWORD mouseDelay{ 160 };
-    inline constexpr DWORD keyboardDelay{ 100 };
-    inline constexpr HWND consoleHWND{ NULL };
+    inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" }; // window name
+    inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
+    inline constexpr LPCSTR procName{ "client.dll" }; 
+    inline constexpr uint_fast32_t checkInterval{ 120 }; // global while(!terminate) sleep interval in ms for all intervals
+    inline constexpr DWORD mouseDelay{ 100 }; // delay before mosue input
+    inline constexpr DWORD keyboardDelay{ 100 }; // delay before key input
+    inline constexpr HWND consoleHWND{ NULL }; // console handle
 }
 
 constexpr auto findGameWindow{ [](LPCSTR windowName) constexpr->HWND {
     return FindWindowEx(NULL, 0, 0, windowName);
 } };
+
 constexpr auto getWindowProcessId{ [](const HWND gameWindow)  constexpr->DWORD {
     DWORD winProcId { 0x0 };
     if (!gameWindow) {
@@ -66,6 +67,7 @@ constexpr auto getWindowProcessId{ [](const HWND gameWindow)  constexpr->DWORD {
     GetWindowThreadProcessId(gameWindow, &winProcId);
     return winProcId;
 } };
+
 constexpr auto openWindowProcessId{ [](const DWORD winProcId) constexpr -> HANDLE {
     if (!winProcId) {
         std::cout << "Failed to get process id\n";
@@ -98,6 +100,7 @@ constexpr auto writeMemory{ [](const HANDLE window,const LPVOID address,const  D
     // WriteProcessMemory(window, (BYTE *)address, &value, sizeof(&value), NULL);
     WriteProcessMemory(window, address, &value, sizeof(&value), NULL);
 } };
+
 constexpr auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress, const std::vector<DWORD> offsets,const ReturnCode code) constexpr->LPVOID {
     LPVOID address_PTR { (LPVOID)baseAddress };
     DWORD64 temp { 0x0 };
@@ -133,6 +136,7 @@ constexpr auto sendKey{ [](const HWND windowName,UINT msg,WPARAM vkCode) constex
     std::this_thread::sleep_for(std::chrono::milliseconds(constants::keyboardDelay));
     PostMessage(windowName,msg,vkCode,MAPVK_VSC_TO_VK);
 } };
+
 constexpr auto sendClick{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
     // sleep before clicking
     // std::this_thread::sleep_for(std::chrono::milliseconds(constants::mouseDelay));
@@ -156,6 +160,7 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
         break;
     }
 } };
+
 constexpr auto captureMousePress{ [](const MSG& msg)constexpr ->void {
     switch ((Mouse)msg.wParam) {
         case Mouse::RIGHT_HOLD:
@@ -178,6 +183,7 @@ constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam)
        }
        return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
    } };
+
 constexpr auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT CALLBACK {
     if (nCode != HC_ACTION)
         return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
