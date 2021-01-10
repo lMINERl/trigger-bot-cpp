@@ -149,7 +149,7 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
         case Keys::CAPSLOCK: // toggle
             if (msg.message == WM_KEYUP) {
                 flag::triggerActive = !flag::triggerActive;
-                flag::shouldFire = flag::triggerActive == false ? false : flag::shouldFire;
+                flag::shouldFire = flag::triggerActive ? flag::shouldFire : false;
                 // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
         break;
@@ -236,9 +236,9 @@ int main() {
 
     // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; // F.E.A.R. 3
 
+    // constant address
     const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle, (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
 
-    const auto friendHoverAddress{ (DWORD_PTR)readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x0088DC14,{0x0,0xA88,0,0xc0,0xfb0},ReturnCode::ADDRESS) }; // //Alien Swarm: Reactive Drop
 
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
 
@@ -269,22 +269,21 @@ int main() {
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP to Close\n";
 
     // intervals callback
-    LPVOID enemyHover{ 0x0 };
-    LPVOID friendHover{ 0x0 };
-    const auto getEnemeyHover{ [&enemyHover,&friendHover,&phandle, enemeyHoverAdress,friendHoverAddress, &gamewindow]()constexpr->void {
-         enemyHover = readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE);
 
-         if (enemyHover == game::noEnemeyHover) {
+    const auto getEnemeyHover{ [&phandle,&procEntry, enemeyHoverAdress, &gamewindow]()constexpr->void {
+        const auto enemyHover{  readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE)};
+
+        if (enemyHover == game::noEnemeyHover) {
              flag::shouldFire = false;
              return;
-         }
-         friendHover = readMemory(phandle,friendHoverAddress,{},ReturnCode::VALUE);
-         //   std::cout << friendHover << std::endl;
-          if (friendHover != game::noFriendHover) {
+        }
+
+        const auto friendHover{ readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x0088DC14,{0x0,0xA88,0,0xc0,0xfb0},ReturnCode::VALUE) };
+        if (friendHover != game::noFriendHover) {
             flag::shouldFire = false;
             return;
-          }
-          flag::shouldFire = flag::triggerActive;
+        }
+        flag::shouldFire = flag::triggerActive;
 
   } };
 
@@ -298,9 +297,9 @@ int main() {
 
     setInterval([gamewindow]() {
         std::thread(
-            [gamewindow]()constexpr->void { sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON); }).detach();},
-            constants::checkInterval,
-            []()constexpr->bool { return flag::shouldFire && !flag::terminate;}
+            [gamewindow]()constexpr->void CALLBACK{ sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON); }).detach();},
+        constants::checkInterval,
+            []()constexpr->bool CALLBACK{ return flag::shouldFire && !flag::terminate; }
         );
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
 
