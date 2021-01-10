@@ -38,17 +38,18 @@ namespace flag {
     inline bool triggerActive{ false };
     inline bool terminate{ false };
     inline bool holdMouseRight{ false };
+    inline bool shouldFire{ false };
 }
 namespace game {
-    inline constexpr uint_fast64_t noEnemeyHover{ 0xFFFFFFFF };
-    inline constexpr uint_fast64_t noFriendHover{ 0x0 };
+    inline LPCVOID noEnemeyHover{ (LPCVOID)0xFFFFFFFF };
+    inline constexpr LPCVOID noFriendHover{ 0x0 };
 }
 namespace constants {
     inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" };
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" };
     inline constexpr LPCSTR procName{ "client.dll" };
-    inline constexpr uint_fast32_t checkInterval{ 80 };
-    inline constexpr DWORD mouseDelay{ 80 };
+    inline constexpr uint_fast32_t checkInterval{ 180 };
+    inline constexpr DWORD mouseDelay{ 160 };
     inline constexpr DWORD keyboardDelay{ 100 };
     inline constexpr HWND consoleHWND{ NULL };
 }
@@ -118,43 +119,23 @@ constexpr auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress,
 } };
 
 constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_fast32_t interval, const std::function<bool(void)> condition) constexpr {
-    return std::thread([func, interval, condition]() {
+    std::thread([func, interval, condition]() {
         do {
-            while (condition()) {
+            if (condition()) {
                 func();
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(interval));
-        } while (true);
-    });
+        } while (!flag::terminate);
+    }).detach();
 } };
 
 constexpr auto sendKey{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
     std::this_thread::sleep_for(std::chrono::milliseconds(constants::keyboardDelay));
     PostMessage(windowName,msg,vkCode,MAPVK_VSC_TO_VK);
-    // keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | 0,0);
-    // std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-    // keybd_event(0,(BYTE)Keys::R,KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,0);
-
-    // kyBrd[0].type = kyBrd[1].type = INPUT_KEYBOARD;
-    // kyBrd[0].ki.time = 0;
-    // kyBrd[0].ki.dwExtraInfo = 0;
-    // kyBrd[0].ki.dwFlags = 0;
-    // kyBrd[0].ki.wVk = key;
-
-
-    // do {
-    //     std::cout << key << std::endl;
-    //     SendInput(1, &kyBrd[0], sizeof(INPUT));
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-    //     kyBrd[0].ki.dwFlags = KEYEVENTF_KEYUP;
-    //     SendInput(1, &kyBrd[0], sizeof(INPUT));
-    //     --repeat;
-    // } while (repeat > 0);
-    } };
+} };
 constexpr auto sendClick{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
     // sleep before clicking
-    std::this_thread::sleep_for(std::chrono::milliseconds(constants::mouseDelay));
+    // std::this_thread::sleep_for(std::chrono::milliseconds(constants::mouseDelay));
     PostMessage(windowName,msg,vkCode,MAPVK_VSC_TO_VK);
     // PostMessage(windowName,WM_LBUTTONUP,vkCode,MAPVK_VSC_TO_VK);
 } };
@@ -164,6 +145,7 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
         case Keys::CAPSLOCK: // toggle
             if (msg.message == WM_KEYUP) {
                 flag::triggerActive = !flag::triggerActive;
+                flag::shouldFire = flag::triggerActive == false ? false : flag::shouldFire;
                 // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
         break;
@@ -187,7 +169,7 @@ constexpr auto captureMousePress{ [](const MSG& msg)constexpr ->void {
     }
 } };
 
-constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam) constexpr ->LRESULT FASTCALL {
+constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam) constexpr ->LRESULT CALLBACK {
        if (nCode != HC_ACTION)
            return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
        if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
@@ -196,7 +178,7 @@ constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam)
        }
        return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
    } };
-constexpr auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT FASTCALL {
+constexpr auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT CALLBACK {
     if (nCode != HC_ACTION)
         return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
         if (wParam == WM_RBUTTONDOWN || wParam == WM_RBUTTONUP) {
@@ -281,33 +263,40 @@ int main() {
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP to Close\n";
 
     // intervals callback
-    const auto getEnemeyHover{ [&phandle, &enemeyHoverAdress,&friendHoverAddress, &gamewindow]()->void {
+    LPVOID enemyHover{ 0x0 };
+    LPVOID friendHover{ 0x0 };
+    const auto getEnemeyHover{ [&enemyHover,&friendHover,&phandle, enemeyHoverAdress,friendHoverAddress, &gamewindow]()constexpr->void {
+         enemyHover = readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE);
 
-        auto enemyHover = reinterpret_cast<uint_fast64_t>(readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE));
-        auto friendHover = reinterpret_cast<uint_fast64_t>(readMemory(phandle,friendHoverAddress,{},ReturnCode::VALUE));
+         if (enemyHover == game::noEnemeyHover) {
+             flag::shouldFire = false;
+             return;
+         }
+         friendHover = readMemory(phandle,friendHoverAddress,{},ReturnCode::VALUE);
+         //   std::cout << friendHover << std::endl;
+          if (friendHover != game::noFriendHover) {
+            flag::shouldFire = false;
+            return;
+          }
+          flag::shouldFire = flag::triggerActive;
 
-        std::cout << friendHover << std::endl;
-        if (enemyHover != game::noEnemeyHover &&
-         friendHover == game::noFriendHover) {
-            // std::cout << "hit " << std::dec << result << std::endl;
-            sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON);
-        }
-
-    } };
+  } };
 
     // run on separate thread
-    //  thread to be deattached
-    auto hoverInterval{ setInterval(getEnemeyHover, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;}) };
+    setInterval(
+        getEnemeyHover,
+        constants::checkInterval,
+        []()constexpr->bool {
+        return flag::triggerActive && !flag::terminate;
+    });
 
-    // destroy thread
-    CLEAN_EXIT = [CLEAN_EXIT, &hoverInterval](int exitCode)constexpr->int {
-        hoverInterval.~thread();
-        return CLEAN_EXIT(exitCode);
-    };
-
+    setInterval([gamewindow]() {
+        std::thread(
+            [gamewindow]()constexpr->void { sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON); }).detach();},
+            constants::checkInterval,
+            []()constexpr->bool { return flag::shouldFire && !flag::terminate;}
+        );
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
-    hoverInterval.detach();
-
 
     while (
         (GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) &&
