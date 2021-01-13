@@ -47,7 +47,7 @@ namespace game {
 namespace constants {
     inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" }; // window name
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
-    inline constexpr LPCSTR procName{ "client.dll" }; 
+    inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 120 }; // global while(!terminate) sleep interval in ms for all intervals
     inline constexpr DWORD mouseDelay{ 100 }; // delay before mosue input
     inline constexpr DWORD keyboardDelay{ 100 }; // delay before key input
@@ -201,6 +201,7 @@ int main() {
     const HWND gamewindow{ findGameWindow(constants::windowName) };
     const auto winProcId{ gamewindow ? getWindowProcessId(gamewindow) : 0x0 };
     const auto phandle{ winProcId ? openWindowProcessId(winProcId) : 0x0 };
+    const auto gameHandle{ GetModuleHandle(constants::moduleName) };
 
     // used for cleaning side-effects as program progress should be re-initialized after each side effect
     std::function<int(int)> CLEAN_EXIT{ [&phandle](int exitCode) constexpr -> int {
@@ -246,7 +247,7 @@ int main() {
 
     // writeMemory(phandle, value, 0x42CA0000); has issue with data type conversion dicimal to float
 
-    if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, modEntry.hModule, modEntryThreadId))) {
+    if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, gameHandle, modEntryThreadId))) {
         std::cout << "Failed to install keybord Hook! \n";
         return CLEAN_EXIT(EXIT_FAILURE);
     } else {
@@ -256,7 +257,7 @@ int main() {
         };
     }
 
-    if (!(global::mouseHook = SetWindowsHookEx(WH_MOUSE_LL, lowLevelMouseProc, modEntry.hModule, modEntryThreadId))) {
+    if (!(global::mouseHook = SetWindowsHookEx(WH_MOUSE_LL, lowLevelMouseProc, gameHandle, modEntryThreadId))) {
         std::cout << "Failed to install mouse Hook! \n";
         return CLEAN_EXIT(EXIT_FAILURE);
     } else {
