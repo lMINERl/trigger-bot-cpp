@@ -49,7 +49,7 @@ namespace constants {
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
     inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 120 }; // global while(!terminate) sleep interval in ms for all intervals
-    inline constexpr DWORD mouseDelay{ 100 }; // delay before mosue input
+    inline constexpr DWORD mouseDelay{ 50 }; // delay before mosue input
     inline constexpr DWORD keyboardDelay{ 100 }; // delay before key input
     inline constexpr HWND consoleHWND{ NULL }; // console handle
 }
@@ -121,15 +121,20 @@ constexpr auto readMemory{ [](const HANDLE phandle, const DWORD_PTR baseAddress,
     }
 } };
 
-constexpr auto setInterval{ [](const std::function<void(void)> func, const uint_fast32_t interval, const std::function<bool(void)> condition) constexpr {
-    std::thread([func, interval, condition]() {
+constexpr auto setInterval{ [](
+    const std::function<void(void)> func,
+    const std::function<uint_least32_t(void)> interval,
+    const std::function<bool(void)> condition) {
+    auto th = std::thread([func, interval, condition]() {
         do {
-            if (condition()) {
-                func();
+            if (std::invoke(condition)) {
+                std::invoke(func);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(interval));
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::invoke(interval)));
         } while (!flag::terminate);
-    }).detach();
+    });
+    th.detach();
+    return th;
 } };
 
 constexpr auto sendKey{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
@@ -271,7 +276,7 @@ int main() {
 
     // intervals callback
 
-    const auto getEnemeyHover{ [&phandle,&procEntry, enemeyHoverAdress, &gamewindow]()constexpr->void {
+    const auto getEnemeyHover{ [&phandle,&procEntry, enemeyHoverAdress, &gamewindow] ()constexpr->void CALLBACK{
         const auto enemyHover{  readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE)};
 
         if (enemyHover == game::noEnemeyHover) {
@@ -289,19 +294,30 @@ int main() {
   } };
 
     // run on separate thread
-    setInterval(
-        getEnemeyHover,
-        constants::checkInterval,
-        []()constexpr->bool {
-        return flag::triggerActive && !flag::terminate;
-    });
+    std::thread hoverInterval = setInterval(getEnemeyHover,
+        []()constexpr->uint_fast32_t CALLBACK {return constants::checkInterval;},
+        []()constexpr->bool CALLBACK{ return flag::triggerActive && !flag::terminate; }
+    );
 
-    setInterval([gamewindow]() {
-        std::thread(
-            [gamewindow]()constexpr->void CALLBACK{ sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON); }).detach();},
-        constants::checkInterval,
-            []()constexpr->bool CALLBACK{ return flag::shouldFire && !flag::terminate; }
-        );
+    if (hoverInterval.joinable()) {
+        CLEAN_EXIT = [&hoverInterval, CLEAN_EXIT](int exitCode)constexpr->int {
+            hoverInterval.~thread();
+            return CLEAN_EXIT(exitCode);
+        };
+    }
+
+    std::thread clickInterval = setInterval(
+        [gamewindow]() { std::thread([gamewindow]()constexpr->void CALLBACK{ sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON); }).detach();},
+        []()constexpr-> uint_fast32_t CALLBACK { return flag::triggerActive ? constants::mouseDelay : constants::checkInterval;},
+        []()constexpr->bool CALLBACK{ return flag::shouldFire && !flag::terminate; }
+    );
+
+    if (clickInterval.joinable()) {
+        CLEAN_EXIT = [&clickInterval, CLEAN_EXIT](int exitCode)constexpr->int {
+            clickInterval.~thread();
+            return CLEAN_EXIT(exitCode);
+        };
+    }
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
 
     while (
