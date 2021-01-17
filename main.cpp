@@ -48,8 +48,8 @@ namespace constants {
     inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" }; // window name
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
     inline constexpr LPCSTR procName{ "client.dll" };
-    inline constexpr uint_fast32_t checkInterval{ 120 }; // global while(!terminate) sleep interval in ms for all intervals
-    inline constexpr DWORD mouseDelay{ 50 }; // delay before mosue input
+    inline constexpr uint_fast32_t checkInterval{ 160 }; // global while(!terminate) sleep interval in ms for all intervals
+    inline constexpr DWORD mouseDelay{ 120 }; // delay before mosue input
     inline constexpr DWORD keyboardDelay{ 100 }; // delay before key input
     inline constexpr HWND consoleHWND{ NULL }; // console handle
 }
