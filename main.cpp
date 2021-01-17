@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <tlhelp32.h>
+#include <atomic>
 
 enum class Keys {
     CAPSLOCK = VK_CAPITAL,
@@ -35,10 +36,10 @@ namespace global {
     inline HHOOK mouseHook{};
 }
 namespace flag {
-    inline bool triggerActive{ false }; // trigger bot is active
-    inline bool terminate{ false }; // terminate the program 
-    inline bool holdMouseRight{ false }; // user is holding the right mouse button
-    inline bool shouldFire{ false }; // the trigger bot should fire
+    inline std::atomic<bool> triggerActive{ false }; // trigger bot is active
+    inline std::atomic<bool> terminate{ false }; // terminate the program 
+    inline std::atomic<bool> holdMouseRight{ false }; // user is holding the right mouse button
+    inline std::atomic<bool> shouldFire{ false }; // the trigger bot should fire
 }
 namespace game {
     inline LPCVOID noEnemeyHover{ (LPCVOID)0xFFFFFFFF }; // aims to no enemy
@@ -125,16 +126,17 @@ constexpr auto setInterval{ [](
     const std::function<void(void)> func,
     const std::function<uint_least32_t(void)> interval,
     const std::function<bool(void)> condition) {
-    auto th = std::thread([func, interval, condition]() {
-        do {
-            if (std::invoke(condition)) {
-                std::invoke(func);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(std::invoke(interval)));
-        } while (!flag::terminate);
-    });
-    th.detach();
-    return th;
+
+        auto th = std::thread([func, interval, condition]() {
+            do {
+                if (std::invoke(condition)) {
+                    std::invoke(func);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(std::invoke(interval)));
+            } while (!flag::terminate.load());
+        });
+        th.detach();
+        return th;
 } };
 
 constexpr auto sendKey{ [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
@@ -153,13 +155,13 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
     switch ((Keys)msg.wParam) {
         case Keys::CAPSLOCK: // toggle
             if (msg.message == WM_KEYUP) {
-                flag::triggerActive = !flag::triggerActive;
-                flag::shouldFire = flag::triggerActive ? flag::shouldFire : false;
+                flag::triggerActive.store(!flag::triggerActive.load());
+                flag::shouldFire.store(flag::triggerActive.load() ? flag::shouldFire.load() : false);
                 // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
         break;
         case Keys::PGUP:
-            flag::terminate = true;
+            flag::terminate.store(true);
         break;
         default:
         break;
@@ -169,10 +171,10 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
 constexpr auto captureMousePress{ [](const MSG& msg)constexpr ->void {
     switch ((Mouse)msg.wParam) {
         case Mouse::RIGHT_HOLD:
-            flag::holdMouseRight = true;
+            flag::holdMouseRight.store(true);
         break;
         case Mouse::RIGHT_RELESE:
-            flag::holdMouseRight = false;
+            flag::holdMouseRight.store(false);
         break;
         default:
         break;
@@ -209,14 +211,14 @@ int main() {
     const auto gameHandle{ GetModuleHandle(constants::moduleName) };
 
     // used for cleaning side-effects as program progress should be re-initialized after each side effect
-    std::function<int(int)> CLEAN_EXIT{ [&phandle](int exitCode) constexpr -> int {
+    std::function<int(int)> mainReturn{ [&phandle](int exitCode) constexpr -> int {
         CloseHandle(phandle);
         return exitCode;
     } };
     // the window specified are not there
     if (!winProcId || !gamewindow || !phandle) {
         std::cout << constants::windowName << " Game not found \n";
-        return CLEAN_EXIT(EXIT_FAILURE);
+        return mainReturn(EXIT_FAILURE);
     }
     // current module and thier threads ids
     const auto modEntry{ getModuleEntry(winProcId, constants::moduleName) };
@@ -254,21 +256,21 @@ int main() {
 
     if (!(global::kbrdHook = SetWindowsHookEx(WH_KEYBOARD_LL, lowLevelKeyboardProc, gameHandle, modEntryThreadId))) {
         std::cout << "Failed to install keybord Hook! \n";
-        return CLEAN_EXIT(EXIT_FAILURE);
+        return mainReturn(EXIT_FAILURE);
     } else {
-        CLEAN_EXIT = [CLEAN_EXIT](int exitCode)constexpr->int {
+        mainReturn = [mainReturn](int exitCode)constexpr->int {
             UnhookWindowsHookEx(global::kbrdHook);
-            return CLEAN_EXIT(exitCode);
+            return mainReturn(exitCode);
         };
     }
 
     if (!(global::mouseHook = SetWindowsHookEx(WH_MOUSE_LL, lowLevelMouseProc, gameHandle, modEntryThreadId))) {
         std::cout << "Failed to install mouse Hook! \n";
-        return CLEAN_EXIT(EXIT_FAILURE);
+        return mainReturn(EXIT_FAILURE);
     } else {
-        CLEAN_EXIT = [CLEAN_EXIT](int exitCode)constexpr->int {
+        mainReturn = [mainReturn](int exitCode)constexpr->int {
             UnhookWindowsHookEx(global::mouseHook);
-            return CLEAN_EXIT(exitCode);
+            return mainReturn(exitCode);
         };
     }
 
@@ -280,43 +282,55 @@ int main() {
         const auto enemyHover{  readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE)};
 
         if (enemyHover == game::noEnemeyHover) {
-             flag::shouldFire = false;
+             flag::shouldFire.store(false);
              return;
         }
 
+        //  this pointer address is being recalculated each time you change game / character
         const auto friendHover{ readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x0088DC14,{0x0,0xA88,0,0xc0,0xfb0},ReturnCode::VALUE) };
+
         if (friendHover != game::noFriendHover) {
-            flag::shouldFire = false;
+            flag::shouldFire.store(false);
             return;
         }
-        flag::shouldFire = flag::triggerActive;
+        flag::shouldFire.store(flag::triggerActive.load());
 
   } };
 
     // run on separate thread
-    std::thread hoverInterval = setInterval(getEnemeyHover,
+    auto hoverInterval = setInterval(getEnemeyHover,
         []()constexpr->uint_fast32_t CALLBACK {return constants::checkInterval;},
-        []()constexpr->bool CALLBACK{ return flag::triggerActive && !flag::terminate; }
+        []()constexpr->bool CALLBACK{ return flag::triggerActive.load() && !flag::terminate.load(); }
     );
 
     if (hoverInterval.joinable()) {
-        CLEAN_EXIT = [&hoverInterval, CLEAN_EXIT](int exitCode)constexpr->int {
+        mainReturn = [&hoverInterval, mainReturn](int exitCode)constexpr->int {
             hoverInterval.~thread();
-            return CLEAN_EXIT(exitCode);
+            return mainReturn(exitCode);
         };
+    } else {
+        std::cout << "couldn't attach thread to check on enemy\n";
+        return mainReturn(EXIT_FAILURE);
     }
 
-    std::thread clickInterval = setInterval(
-        [gamewindow]() { std::thread([gamewindow]()constexpr->void CALLBACK{ sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON); }).detach();},
-        []()constexpr-> uint_fast32_t CALLBACK { return flag::triggerActive ? constants::mouseDelay : constants::checkInterval;},
-        []()constexpr->bool CALLBACK{ return flag::shouldFire && !flag::terminate; }
+    auto clickInterval = setInterval(
+        [gamewindow]() {
+        std::thread([gamewindow]()constexpr->void {
+            sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON);
+        }).detach();
+    },
+        []()constexpr-> uint_fast32_t CALLBACK { return flag::triggerActive.load() && flag::holdMouseRight.load() ? constants::mouseDelay : constants::checkInterval;},
+        []()constexpr->bool CALLBACK{ return flag::shouldFire.load() && !flag::terminate.load(); }
     );
 
     if (clickInterval.joinable()) {
-        CLEAN_EXIT = [&clickInterval, CLEAN_EXIT](int exitCode)constexpr->int {
+        mainReturn = [&clickInterval, mainReturn](int exitCode)constexpr->int {
             clickInterval.~thread();
-            return CLEAN_EXIT(exitCode);
+            return mainReturn(exitCode);
         };
+    } else {
+        std::cout << "couldn't attach thread to check on click\n";
+        return mainReturn(EXIT_FAILURE);
     }
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
 
@@ -325,12 +339,12 @@ int main() {
         static_cast<int>(global::msg.wParam) != static_cast<int>(Keys::PGUP) // exit program on page up
         ) {
 
-        if (global::msg.message == WM_KEYUP || global::msg.message == WM_KEYDOWN)
-            captureKeyPress(global::msg);
-        else if (global::msg.message == (UINT)Mouse::RIGHT_HOLD || global::msg.message == (UINT)Mouse::RIGHT_RELESE)
-            captureMousePress(global::msg);
+        // if (global::msg.message == WM_KEYUP || global::msg.message == WM_KEYDOWN)
+        std::thread([]()constexpr->void {captureKeyPress(global::msg);}).detach();
+
+        std::thread([]()constexpr->void {captureMousePress(global::msg);}).detach();
     }
 
     std::cout << "Closed\n";
-    return CLEAN_EXIT(EXIT_SUCCESS);
+    return mainReturn(EXIT_SUCCESS);
 }
