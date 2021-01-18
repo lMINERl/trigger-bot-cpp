@@ -50,7 +50,7 @@ namespace constants {
     inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
     inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 160 }; // global while(!terminate) sleep interval in ms for all intervals
-    inline constexpr DWORD mouseDelay{ 120 }; // delay before mosue input
+    inline constexpr DWORD mouseDelay{ 100 }; // delay before mosue input
     inline constexpr DWORD keyboardDelay{ 100 }; // delay before key input
     inline constexpr HWND consoleHWND{ NULL }; // console handle
 }
@@ -181,7 +181,7 @@ constexpr auto captureMousePress{ [](const MSG& msg)constexpr ->void {
     }
 } };
 
-constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam) constexpr ->LRESULT CALLBACK {
+constexpr auto lowLevelKeyboardProc{ [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr->LRESULT __stdcall {
        if (nCode != HC_ACTION)
            return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
        if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
@@ -191,7 +191,7 @@ constexpr auto lowLevelKeyboardProc{ [](int nCode, WPARAM wParam, LPARAM lParam)
        return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
    } };
 
-constexpr auto lowLevelMouseProc{ [](int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT CALLBACK {
+constexpr auto lowLevelMouseProc{ [] (int nCode,WPARAM wParam,LPARAM lParam)constexpr->LRESULT __stdcall {
     if (nCode != HC_ACTION)
         return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
         if (wParam == WM_RBUTTONDOWN || wParam == WM_RBUTTONUP) {
@@ -205,18 +205,18 @@ int main() {
 
     // get window data HWND/ID/HANDLE
 
-    const HWND gamewindow{ findGameWindow(constants::windowName) };
-    const auto winProcId{ gamewindow ? getWindowProcessId(gamewindow) : 0x0 };
-    const auto phandle{ winProcId ? openWindowProcessId(winProcId) : 0x0 };
+    const std::atomic<HWND> gamewindow{ findGameWindow(constants::windowName) };
+    const auto winProcId{ gamewindow.load(std::memory_order_relaxed) ? getWindowProcessId(gamewindow.load(std::memory_order_relaxed)) : 0x0 };
+    std::atomic<HANDLE> phandle{ winProcId ? openWindowProcessId(winProcId) : 0x0 };
     const auto gameHandle{ GetModuleHandle(constants::moduleName) };
 
     // used for cleaning side-effects as program progress should be re-initialized after each side effect
     std::function<int(int)> mainReturn{ [&phandle](int exitCode) constexpr -> int {
-        CloseHandle(phandle);
+        CloseHandle(phandle.exchange(nullptr,std::memory_order_relaxed));
         return exitCode;
     } };
     // the window specified are not there
-    if (!winProcId || !gamewindow || !phandle) {
+    if (!winProcId || !gamewindow.load(std::memory_order_relaxed) || !phandle.load(std::memory_order_relaxed)) {
         std::cout << constants::windowName << " Game not found \n";
         return mainReturn(EXIT_FAILURE);
     }
@@ -229,9 +229,9 @@ int main() {
     // loggs << should be edited or make logger
 
     std::cout << "Game: " << constants::windowName <<
-        "\nWindow HWND: " << gamewindow <<
+        "\nWindow HWND: " << gamewindow.load(std::memory_order_relaxed) <<
         "\nProcessId: " << winProcId <<
-        "\nHandle: " << phandle <<
+        "\nHandle: " << phandle.load(std::memory_order_relaxed) <<
         "\nmodBaseAddress: " << std::hex << (DWORD_PTR)modEntry.modBaseAddr <<
         "\nMemory Check Interval: " << constants::checkInterval <<
         "\nMouse Interval: " << constants::mouseDelay <<
@@ -245,7 +245,7 @@ int main() {
     // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; // F.E.A.R. 3
 
     // constant address
-    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle, (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
+    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
 
 
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
@@ -278,32 +278,37 @@ int main() {
 
     // intervals callback
 
-    const auto getEnemeyHover{ [&phandle,&procEntry, enemeyHoverAdress, &gamewindow] ()constexpr->void CALLBACK{
-        const auto enemyHover{  readMemory(phandle, enemeyHoverAdress , { }, ReturnCode::VALUE)};
+    const auto getEnemeyHover{ [
+            enemyHover{(LPVOID)0x0},
+            friendHover{(LPVOID)0x0},
+            &phandle,
+            &procEntry,
+            enemeyHoverAdress
+        ] () mutable ->void{
+        enemyHover = readMemory(phandle.load(std::memory_order_relaxed), enemeyHoverAdress , { }, ReturnCode::VALUE);
 
         if (enemyHover == game::noEnemeyHover) {
              flag::shouldFire.store(false);
              return;
         }
-
         //  this pointer address is being recalculated each time you change game / character
-        const auto friendHover{ readMemory(phandle,(DWORD_PTR)procEntry.modBaseAddr + 0x0088DC14,{0x0,0xA88,0,0xc0,0xfb0},ReturnCode::VALUE) };
+         friendHover = readMemory(phandle.load(std::memory_order_relaxed),(DWORD_PTR)procEntry.modBaseAddr + 0x0088DC14,{0x0,0xA88,0,0xc0,0xfb0},ReturnCode::VALUE);
 
         if (friendHover != game::noFriendHover) {
-            flag::shouldFire.store(false);
+            flag::shouldFire.store(false,std::memory_order_relaxed);
             return;
         }
-        flag::shouldFire.store(flag::triggerActive.load());
+        flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed),std::memory_order_relaxed);
 
   } };
 
     // run on separate thread
     auto hoverInterval = setInterval(getEnemeyHover,
-        []()constexpr->uint_fast32_t CALLBACK {return constants::checkInterval;},
-        []()constexpr->bool CALLBACK{ return flag::triggerActive.load() && !flag::terminate.load(); }
+        []()constexpr->uint_fast32_t {return constants::checkInterval;},
+        []()constexpr->bool { return flag::triggerActive.load() && !flag::terminate.load(); }
     );
 
-    if (hoverInterval.joinable()) {
+    if (!hoverInterval.joinable()) {
         mainReturn = [&hoverInterval, mainReturn](int exitCode)constexpr->int {
             hoverInterval.~thread();
             return mainReturn(exitCode);
@@ -314,16 +319,16 @@ int main() {
     }
 
     auto clickInterval = setInterval(
-        [gamewindow]() {
-        std::thread([gamewindow]()constexpr->void {
-            sendClick(gamewindow, WM_LBUTTONDOWN, VK_LBUTTON);
+        [&gamewindow]()constexpr->void {
+        std::thread([&gamewindow]()constexpr->void {
+            sendClick(gamewindow.load(), WM_LBUTTONDOWN, VK_LBUTTON);
         }).detach();
     },
-        []()constexpr-> uint_fast32_t CALLBACK { return flag::triggerActive.load() && flag::holdMouseRight.load() ? constants::mouseDelay : constants::checkInterval;},
-        []()constexpr->bool CALLBACK{ return flag::shouldFire.load() && !flag::terminate.load(); }
+        []()constexpr-> uint_fast32_t { return flag::triggerActive.load() ? constants::mouseDelay : constants::checkInterval;},
+        []()constexpr->bool { return flag::shouldFire.load() && !flag::terminate.load(); }
     );
 
-    if (clickInterval.joinable()) {
+    if (!clickInterval.joinable()) {
         mainReturn = [&clickInterval, mainReturn](int exitCode)constexpr->int {
             clickInterval.~thread();
             return mainReturn(exitCode);
@@ -332,12 +337,11 @@ int main() {
         std::cout << "couldn't attach thread to check on click\n";
         return mainReturn(EXIT_FAILURE);
     }
+
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
 
-    while (
-        (GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) &&
-        static_cast<int>(global::msg.wParam) != static_cast<int>(Keys::PGUP) // exit program on page up
-        ) {
+    // exit program on page up
+    while ((GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) && !flag::terminate.load(std::memory_order_relaxed)) {
 
         // if (global::msg.message == WM_KEYUP || global::msg.message == WM_KEYDOWN)
         std::thread([]()constexpr->void {captureKeyPress(global::msg);}).detach();
