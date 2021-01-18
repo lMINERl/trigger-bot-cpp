@@ -133,7 +133,7 @@ constexpr auto setInterval{ [](
                     std::invoke(func);
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(std::invoke(interval)));
-            } while (!flag::terminate.load());
+            } while (!flag::terminate.load(std::memory_order_relaxed));
         });
         th.detach();
         return th;
@@ -155,13 +155,13 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
     switch ((Keys)msg.wParam) {
         case Keys::CAPSLOCK: // toggle
             if (msg.message == WM_KEYUP) {
-                flag::triggerActive.store(!flag::triggerActive.load());
-                flag::shouldFire.store(flag::triggerActive.load() ? flag::shouldFire.load() : false);
+                flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_relaxed),std::memory_order_relaxed);
+                flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed) ? flag::shouldFire.load(std::memory_order_relaxed) : false);
                 // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
         break;
         case Keys::PGUP:
-            flag::terminate.store(true);
+            flag::terminate.store(true,std::memory_order_relaxed);
         break;
         default:
         break;
@@ -171,10 +171,10 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
 constexpr auto captureMousePress{ [](const MSG& msg)constexpr ->void {
     switch ((Mouse)msg.wParam) {
         case Mouse::RIGHT_HOLD:
-            flag::holdMouseRight.store(true);
+            flag::holdMouseRight.store(true,std::memory_order_relaxed);
         break;
         case Mouse::RIGHT_RELESE:
-            flag::holdMouseRight.store(false);
+            flag::holdMouseRight.store(false,std::memory_order_relaxed);
         break;
         default:
         break;
@@ -288,7 +288,7 @@ int main() {
         enemyHover = readMemory(phandle.load(std::memory_order_relaxed), enemeyHoverAdress , { }, ReturnCode::VALUE);
 
         if (enemyHover == game::noEnemeyHover) {
-             flag::shouldFire.store(false);
+             flag::shouldFire.store(false,std::memory_order_relaxed);
              return;
         }
         //  this pointer address is being recalculated each time you change game / character
@@ -321,11 +321,11 @@ int main() {
     auto clickInterval = setInterval(
         [&gamewindow]()constexpr->void {
         std::thread([&gamewindow]()constexpr->void {
-            sendClick(gamewindow.load(), WM_LBUTTONDOWN, VK_LBUTTON);
+            sendClick(gamewindow.load(std::memory_order_relaxed), WM_LBUTTONDOWN, VK_LBUTTON);
         }).detach();
     },
-        []()constexpr-> uint_fast32_t { return flag::triggerActive.load() ? constants::mouseDelay : constants::checkInterval;},
-        []()constexpr->bool { return flag::shouldFire.load() && !flag::terminate.load(); }
+        []()constexpr-> uint_fast32_t { return flag::triggerActive.load(std::memory_order_relaxed) ? constants::mouseDelay : constants::checkInterval;},
+        []()constexpr->bool { return flag::shouldFire.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_relaxed); }
     );
 
     if (!clickInterval.joinable()) {
