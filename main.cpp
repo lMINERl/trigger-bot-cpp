@@ -305,7 +305,7 @@ int main() {
     // run on separate thread
     auto hoverInterval = setInterval(getEnemeyHover,
         []()constexpr->uint_fast32_t {return constants::checkInterval;},
-        []()constexpr->bool { return flag::triggerActive.load() && !flag::terminate.load(); }
+        []()constexpr->bool { return flag::triggerActive.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_relaxed); }
     );
 
     if (!hoverInterval.joinable()) {
