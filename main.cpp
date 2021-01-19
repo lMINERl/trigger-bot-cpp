@@ -133,7 +133,7 @@ constexpr auto setInterval{ [](
                     std::invoke(func);
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(std::invoke(interval)));
-            } while (!flag::terminate.load(std::memory_order_relaxed));
+            } while (!flag::terminate.load(std::memory_order_seq_cst));
         });
         th.detach();
         return th;
@@ -155,13 +155,13 @@ constexpr auto captureKeyPress{ [](const MSG& msg)constexpr ->void {
     switch ((Keys)msg.wParam) {
         case Keys::CAPSLOCK: // toggle
             if (msg.message == WM_KEYUP) {
-                flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_relaxed),std::memory_order_relaxed);
+                flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_seq_cst),std::memory_order_seq_cst);
                 flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed) ? flag::shouldFire.load(std::memory_order_relaxed) : false);
                 // std::cout << (flag::triggerActive ? " active" : "deactive") << "\n";
             }
         break;
         case Keys::PGUP:
-            flag::terminate.store(true,std::memory_order_relaxed);
+            flag::terminate.store(true,std::memory_order_seq_cst);
         break;
         default:
         break;
@@ -212,11 +212,11 @@ int main() {
 
     // used for cleaning side-effects as program progress should be re-initialized after each side effect
     std::function<int(int)> mainReturn{ [&phandle](int exitCode) constexpr -> int {
-        CloseHandle(phandle.exchange(nullptr,std::memory_order_relaxed));
+        CloseHandle(phandle.exchange(nullptr,std::memory_order::memory_order_seq_cst));
         return exitCode;
     } };
     // the window specified are not there
-    if (!winProcId || !gamewindow.load(std::memory_order_relaxed) || !phandle.load(std::memory_order_relaxed)) {
+    if (!winProcId || !gamewindow.load(std::memory_order_seq_cst) || !phandle.load(std::memory_order_seq_cst)) {
         std::cout << constants::windowName << " Game not found \n";
         return mainReturn(EXIT_FAILURE);
     }
@@ -229,9 +229,9 @@ int main() {
     // loggs << should be edited or make logger
 
     std::cout << "Game: " << constants::windowName <<
-        "\nWindow HWND: " << gamewindow.load(std::memory_order_relaxed) <<
+        "\nWindow HWND: " << gamewindow.load(std::memory_order_seq_cst) <<
         "\nProcessId: " << winProcId <<
-        "\nHandle: " << phandle.load(std::memory_order_relaxed) <<
+        "\nHandle: " << phandle.load(std::memory_order_seq_cst) <<
         "\nmodBaseAddress: " << std::hex << (DWORD_PTR)modEntry.modBaseAddr <<
         "\nMemory Check Interval: " << constants::checkInterval <<
         "\nMouse Interval: " << constants::mouseDelay <<
@@ -245,7 +245,7 @@ int main() {
     // const auto enemeyHoverAdress{ readMemory(phandle, baseAddress + 0x0147E1C0, { 0x23C, 0x138, 0x74, 0x74, 0x20 }, ReturnCode::ADDRESS) }; // F.E.A.R. 3
 
     // constant address
-    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
+    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.modBaseAddr + 0x84A3E0, { }, ReturnCode::ADDRESS) }; //Alien Swarm: Reactive Drop
 
 
     // auto enemeyHoverAdress = readMemory(phandle, modBaseAddress + 0x2FA5D4, { }, ReturnCode::ADDRESS); //cod4
@@ -298,14 +298,14 @@ int main() {
             flag::shouldFire.store(false,std::memory_order_relaxed);
             return;
         }
-        flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed),std::memory_order_relaxed);
+        flag::shouldFire.store(flag::triggerActive.load(std::memory_order_seq_cst),std::memory_order_relaxed);
 
   } };
 
     // run on separate thread
     auto hoverInterval = setInterval(getEnemeyHover,
         []()constexpr->uint_fast32_t {return constants::checkInterval;},
-        []()constexpr->bool { return flag::triggerActive.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_relaxed); }
+        []()constexpr->bool { return flag::triggerActive.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst); }
     );
 
     if (!hoverInterval.joinable()) {
@@ -324,8 +324,12 @@ int main() {
             sendClick(gamewindow.load(std::memory_order_relaxed), WM_LBUTTONDOWN, VK_LBUTTON);
         }).detach();
     },
-        []()constexpr-> uint_fast32_t { return flag::triggerActive.load(std::memory_order_relaxed) ? constants::mouseDelay : constants::checkInterval;},
-        []()constexpr->bool { return flag::shouldFire.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_relaxed); }
+        []()constexpr-> uint_fast32_t {
+        return flag::triggerActive.load(std::memory_order_relaxed) ? constants::mouseDelay : constants::checkInterval;
+    },
+        []()constexpr->bool {
+        return flag::shouldFire.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_seq_cst);
+    }
     );
 
     if (!clickInterval.joinable()) {
@@ -341,7 +345,7 @@ int main() {
     // setInterval(getAmmo, constants::checkInterval, []()constexpr->bool { return flag::triggerActive;});
 
     // exit program on page up
-    while ((GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) && !flag::terminate.load(std::memory_order_relaxed)) {
+    while ((GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) && !flag::terminate.load(std::memory_order_seq_cst)) {
 
         // if (global::msg.message == WM_KEYUP || global::msg.message == WM_KEYDOWN)
         std::thread([]()constexpr->void {captureKeyPress(global::msg);}).detach();
