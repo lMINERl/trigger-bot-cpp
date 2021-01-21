@@ -1,5 +1,7 @@
 {
   "C_Cpp.formatting": "vcFormat",
+
+  "editor.formatOnSave": true,
   "C_Cpp.vcFormat.space.pointerReferenceAlignment": "left",
   "C_Cpp.vcFormat.newLine.beforeOpenBrace.function": "sameLine",
   "C_Cpp.vcFormat.newLine.beforeOpenBrace.lambda": "sameLine",
