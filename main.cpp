@@ -56,36 +56,39 @@ namespace constants {
     inline constexpr HWND consoleHWND{ NULL }; // console handle
 }
 
-constexpr auto findGameWindow{
+constexpr auto findGameWindow {
     [](LPCSTR windowName) constexpr->HWND {
         return FindWindowEx(NULL, 0, 0, windowName);
     }
 };
 
-constexpr auto getWindowProcessId{
+constexpr auto getWindowProcessId {
     [](const HWND gameWindow) constexpr->DWORD {
         DWORD winProcId{0x0};
+
         if (!gameWindow) {
             std::cout << "Game window Not found\n";
             return winProcId;
         }
+
         GetWindowThreadProcessId(gameWindow, &winProcId);
         return winProcId;
     }
 };
 
-constexpr auto openWindowProcessId{
+constexpr auto openWindowProcessId {
     [](const DWORD winProcId) constexpr->HANDLE {
         if (!winProcId) {
             std::cout << "Failed to get process id\n";
             return static_cast<HANDLE>(0);
         }
+
         return OpenProcess(PROCESS_ALL_ACCESS, FALSE, winProcId);
     }
 };
 
-constexpr auto getModuleEntry{
-    [](const DWORD proc,std::string modName) constexpr->MODULEENTRY32 {
+constexpr auto getModuleEntry {
+    [](const DWORD proc, std::string modName) constexpr->MODULEENTRY32 {
         HANDLE hSnap{CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, proc)};
         MODULEENTRY32 modEntry{};
 
@@ -101,6 +104,7 @@ constexpr auto getModuleEntry{
         }
 
         modEntry.dwSize = sizeof(modEntry);
+
         if (!Module32First(hSnap, &modEntry)) {
             return CLEAN_RETURN();
         }
@@ -108,20 +112,21 @@ constexpr auto getModuleEntry{
         while (modName.compare(modEntry.szModule) != 0) {
             Module32Next(hSnap, &modEntry);
         }
+
         return CLEAN_RETURN();
     }
 };
 
-constexpr auto writeMemory{
-    [](const HANDLE window,const LPVOID address,const DWORD value) constexpr->void {
-    // WriteProcessMemory(window, (BYTE *)address, &value, sizeof(&value),
-    // NULL);
+constexpr auto writeMemory {
+    [](const HANDLE window, const LPVOID address, const DWORD value) constexpr->void {
+        // WriteProcessMemory(window, (BYTE *)address, &value, sizeof(&value),
+        // NULL);
         WriteProcessMemory(window, address, &value, sizeof(&value), NULL);
     }
 };
 
-constexpr auto readMemory{
-    [](const HANDLE phandle,const DWORD_PTR baseAddress,const std::vector<DWORD> offsets, const ReturnCode code) constexpr->LPVOID {
+constexpr auto readMemory {
+    [](const HANDLE phandle, const DWORD_PTR baseAddress, const std::vector<DWORD> offsets, const ReturnCode code) constexpr->LPVOID {
 
         LPVOID address_PTR{(LPVOID)baseAddress};
         DWORD64 temp{0x0};
@@ -132,24 +137,28 @@ constexpr auto readMemory{
             ReadProcessMemory(phandle, address_PTR, &temp, sizeof(DWORD32), NULL);
             // std::cout << std::hex << address_PTR << "-" << temp << std::endl;
         }
+
         switch (code) {
             case ReturnCode::ADDRESS:
                 return address_PTR;
+
             case ReturnCode::VALUE:
                 return (LPVOID)temp;
+
             default:
                 return (LPVOID)0x0;
         }
     }
 };
 
-constexpr auto setInterval{
-    [](const std::function<void(void)> func,const std::function<uint_least32_t(void)> interval,const std::function<bool(void)> condition) {
+constexpr auto setInterval {
+    [](const std::function<void(void)> func, const std::function<uint_least32_t(void)> interval, const std::function<bool(void)> condition) {
         auto th = std::thread([func, interval, condition]() {
             do {
                 if (std::invoke(condition)) {
                     std::invoke(func);
                 }
+
                 std::this_thread::sleep_for(
                     std::chrono::milliseconds(std::invoke(interval)));
             } while (!flag::terminate.load(std::memory_order_seq_cst));
@@ -159,70 +168,80 @@ constexpr auto setInterval{
     }
 };
 
-constexpr auto sendKey{
+constexpr auto sendKey {
     [](const HWND windowName, UINT msg, WPARAM vkCode) constexpr->void {
         std::this_thread::sleep_for(std::chrono::milliseconds(constants::keyboardDelay));
         PostMessage(windowName, msg, vkCode, MAPVK_VSC_TO_VK);
     }
 };
 
-constexpr auto sendClick{
-    [](const HWND windowName,UINT msg,WPARAM vkCode) constexpr->void {
+constexpr auto sendClick {
+    [](const HWND windowName, UINT msg, WPARAM vkCode) constexpr->void {
         PostMessage(windowName, msg, vkCode, MAPVK_VSC_TO_VK);
     }
 };
 
-constexpr auto captureKeyPress{
-    [](const MSG& msg) constexpr->void {
+constexpr auto captureKeyPress {
+    [](const MSG & msg) constexpr->void {
         switch ((Keys)msg.wParam) {
             case Keys::CAPSLOCK: // toggle
                 if (msg.message == WM_KEYUP) {
-                    flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_seq_cst),std::memory_order_seq_cst);
+                    flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_seq_cst), std::memory_order_seq_cst);
                     flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed)
-                            ? flag::shouldFire.load(std::memory_order_relaxed)
-                            : false);
+                        ? flag::shouldFire.load(std::memory_order_relaxed)
+                        : false);
                 }
-            break;
+
+                break;
+
             case Keys::PGUP:
                 flag::terminate.store(true, std::memory_order_seq_cst);
-            break;
+                break;
+
             default:
-            break;
+                break;
         }
     }
 };
 
-constexpr auto captureMousePress{
-    [](const MSG& msg) constexpr->void {
+constexpr auto captureMousePress {
+    [](const MSG & msg) constexpr->void {
         switch ((Mouse)msg.wParam) {
             case Mouse::RIGHT_HOLD:
                 flag::holdMouseRight.store(true, std::memory_order_relaxed);
-            break;
+                break;
+
             case Mouse::RIGHT_RELESE:
                 flag::holdMouseRight.store(false, std::memory_order_relaxed);
-            break;
+                break;
+
             default:
-            break;
+                break;
         }
     }
 };
 
-constexpr auto lowLevelKeyboardProc{
+constexpr auto lowLevelKeyboardProc {
     [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr->LRESULT __stdcall {
-        if (nCode != HC_ACTION)
-            return CallNextHookEx(global::kbrdHook,nCode,wParam,lParam);
+        if (nCode != HC_ACTION) {
+            return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
+        }
+
         if (wParam == WM_KEYUP || wParam == WM_KEYDOWN) {
             global::kbrdStruct = (*(KBDLLHOOKSTRUCT*)lParam);
-            PostMessage(constants::consoleHWND, (UINT)wParam, global::kbrdStruct.vkCode,MAPVK_VSC_TO_VK);
+            PostMessage(constants::consoleHWND, (UINT)wParam, global::kbrdStruct.vkCode, MAPVK_VSC_TO_VK);
         }
+
         return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
     }
 };
 
-constexpr auto lowLevelMouseProc{
+constexpr auto lowLevelMouseProc {
     [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr->LRESULT __stdcall {
-        if (nCode != HC_ACTION)
-            return CallNextHookEx(global::mouseHook,nCode,wParam,lParam);
+        if (nCode != HC_ACTION) {
+            return CallNextHookEx(global::mouseHook, nCode, wParam, lParam);
+        }
+
         if (wParam == WM_RBUTTONDOWN || wParam == WM_RBUTTONUP) {
             PostMessage(constants::consoleHWND, (UINT)wParam, wParam, MAPVK_VSC_TO_VK);
         }
@@ -233,52 +252,50 @@ constexpr auto lowLevelMouseProc{
 
 int main() {
     // get window data HWND/ID/HANDLE
-
-    const auto gamewindow{
+    const auto gamewindow {
         std::atomic<HWND>(findGameWindow(constants::windowName))
     };
-    const auto winProcId{
+    const auto winProcId {
         gamewindow.load(std::memory_order_seq_cst)
-            ? getWindowProcessId(gamewindow.load(std::memory_order_seq_cst))
-            : 0x0
+        ? getWindowProcessId(gamewindow.load(std::memory_order_seq_cst))
+        : 0x0
     };
-    const auto phandle{
+    const auto phandle {
         winProcId
         ? std::atomic<HANDLE>(openWindowProcessId(winProcId))
         : nullptr
     };
-    const auto gameHandle{
+    const auto gameHandle {
         GetModuleHandle(constants::moduleName)
     };
     // used for cleaning side-effects as program progress should be
     // re-initialized after each side effect
-    std::function<int(int)> mainReturn{
+    std::function<int(int)> mainReturn {
         [&phandle](int exitCode) constexpr->int {
             CloseHandle(phandle.load(std::memory_order::memory_order_seq_cst));
             return exitCode;
         }
     };
+
     // the window specified are not there
     if (!winProcId || !gamewindow.load(std::memory_order_seq_cst) || !phandle.load(std::memory_order_seq_cst)) {
         std::cout << constants::windowName << " Game not found \n";
         return mainReturn(EXIT_FAILURE);
     }
+
     // current module and thier threads ids
     const auto modEntry = std::make_unique<MODULEENTRY32>(
-        getModuleEntry(winProcId, constants::moduleName));
+            getModuleEntry(winProcId, constants::moduleName));
     const auto procEntry = std::make_unique<MODULEENTRY32>(
-        getModuleEntry(winProcId, constants::procName));
+            getModuleEntry(winProcId, constants::procName));
     const auto modEntryThreadId = GetThreadId(modEntry.get()->hModule);
     const auto procEntryThreadId = GetThreadId(procEntry.get()->hModule);
-
     // loggs << should be edited or make logger
-
     std::cout << "Game: " << constants::windowName
         << "\nWindow HWND: " << gamewindow.load(std::memory_order_seq_cst)
         << "\nProcessId: " << winProcId
         << "\nHandle: " << phandle.load(std::memory_order_seq_cst)
-        << "\nmodBaseAddress: " << std::hex
-        << (DWORD_PTR)modEntry.get()->modBaseAddr
+        << "\nmodBaseAddress: " << std::hex << (DWORD_PTR)modEntry.get()->modBaseAddr
         << "\nMemory Check Interval: " << constants::checkInterval
         << "\nMouse Interval: " << constants::mouseDelay
         << "\nKeyboard Interval: " << constants::keyboardDelay
@@ -322,40 +339,42 @@ int main() {
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP "
         "to Close\n";
-
-    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst),(DWORD_PTR)procEntry.get()->modBaseAddr + 0x84A3E0,{},ReturnCode::ADDRESS) }; // Alien Swarm: Reactive
+    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x84A3E0, {}, ReturnCode::ADDRESS) }; // Alien Swarm: Reactive
     // Drop intervals callback
-
-    const auto getEnemeyHover{
+    const auto getEnemeyHover {
         [
-            enemyHover{(LPVOID)0x0},
-            friendHover{(LPVOID)0x0},
-            &phandle,
-            &procEntry,
-            enemeyHoverAdress
+        enemyHover{(LPVOID)0x0},
+        friendHover{(LPVOID)0x0},
+        &phandle,
+        &procEntry,
+        enemeyHoverAdress
         ] () mutable -> void {
 
-            enemyHover = readMemory(phandle.load(std::memory_order_relaxed),enemeyHoverAdress, {}, ReturnCode::VALUE);
+            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), enemeyHoverAdress, {}, ReturnCode::VALUE);
+
             if (enemyHover == game::noEnemeyHover) {
                 flag::shouldFire.store(false, std::memory_order_relaxed);
                 return;
             }
-            //  this pointer address is being recalculated each time you change game /
-            //  character
-            friendHover = readMemory(phandle.load(std::memory_order_relaxed),(DWORD_PTR)procEntry.get()->modBaseAddr + 0x0088DC14,{0x0, 0xA88, 0, 0xc0, 0xfb0}, ReturnCode::VALUE);
+
+            //  this pointer address is being recalculated each time you change game character
+            friendHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x0088DC14, {0x0, 0xA88, 0, 0xc0, 0xfb0}, ReturnCode::VALUE);
+
             if (friendHover != game::noFriendHover) {
                 flag::shouldFire.store(false, std::memory_order_relaxed);
                 return;
             }
-            flag::shouldFire.store(flag::triggerActive.load(std::memory_order_seq_cst),std::memory_order_relaxed);
+
+            flag::shouldFire.store(flag::triggerActive.load(std::memory_order_seq_cst), std::memory_order_relaxed);
         }
     };
-
     // run on separate thread
     auto hoverInterval = std::make_unique<std::thread>(setInterval(
-        getEnemeyHover,
-        []() constexpr->uint_fast32_t {return constants::checkInterval; },
-        []() constexpr->bool {
+                getEnemeyHover,
+    []() constexpr->uint_fast32_t {
+        return constants::checkInterval;
+    },
+    []() constexpr->bool {
         return flag::triggerActive.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst);
     }));
 
@@ -369,19 +388,18 @@ int main() {
         return mainReturn(EXIT_FAILURE);
     }
 
-
     auto clickInterval = std::make_unique<std::thread>(setInterval(
-        [&gamewindow]() constexpr->void {
+    [&gamewindow]() constexpr->void {
         std::thread([&gamewindow]() constexpr->void {
             sendClick(gamewindow.load(std::memory_order_relaxed), WM_LBUTTONDOWN, VK_LBUTTON);
         }).detach();
     },
-        []() constexpr->uint_fast32_t {
+    []() constexpr->uint_fast32_t {
         return flag::triggerActive.load(std::memory_order_relaxed)
-            ? constants::mouseDelay
-            : constants::checkInterval;
+        ? constants::mouseDelay
+        : constants::checkInterval;
     },
-        []() constexpr->bool {
+    []() constexpr->bool {
         return flag::shouldFire.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_seq_cst);
     }));
 
@@ -400,7 +418,6 @@ int main() {
         std::thread([]() constexpr->void {
             captureKeyPress(global::msg);
         }).detach();
-
         std::thread([]() constexpr->void {
             captureMousePress(global::msg);
         }).detach();
