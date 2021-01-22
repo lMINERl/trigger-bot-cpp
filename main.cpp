@@ -352,7 +352,7 @@ int main() {
         &phandle,
         &procEntry
         ] () mutable -> void {
-            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x00518C7C, {0xc, 0x14, 0x6e4}, ReturnCode::VALUE);
+            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x004FB9F8, {0x24, 0x38, 0x4, 0x97C}, ReturnCode::VALUE);
 
             if (!enemyHover) {
                 flag::shouldFire.store(false);
