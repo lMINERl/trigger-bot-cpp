@@ -47,8 +47,10 @@ namespace game {
     inline constexpr LPCVOID noFriendHover{ 0x0 }; // aims to no friend
 }
 namespace constants {
-    inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" }; // window name
-    inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
+    // inline constexpr LPCSTR windowName{ "Alien Swarm: Reactive Drop" }; // window name
+    // inline constexpr LPCSTR moduleName{ "reactivedrop.exe" }; // and its module
+    inline constexpr LPCSTR windowName{ "Codename CURE" }; // window name
+    inline constexpr LPCSTR moduleName{ "cure.exe" }; // and its module
     inline constexpr LPCSTR procName{ "client.dll" };
     inline constexpr uint_fast32_t checkInterval{ 160 }; // global while(!terminate) sleep interval in ms for all intervals
     inline constexpr DWORD mouseDelay{ 100 }; // delay before mosue input
@@ -186,7 +188,7 @@ constexpr auto captureKeyPress {
         switch ((Keys)msg.wParam) {
             case Keys::CAPSLOCK: // toggle
                 if (msg.message == WM_KEYUP) {
-                    flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_seq_cst), std::memory_order_seq_cst);
+                    flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_seq_cst));
                     flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed)
                         ? flag::shouldFire.load(std::memory_order_relaxed)
                         : false);
@@ -195,7 +197,7 @@ constexpr auto captureKeyPress {
                 break;
 
             case Keys::PGUP:
-                flag::terminate.store(true, std::memory_order_seq_cst);
+                flag::terminate.store(true);
                 break;
 
             default:
@@ -206,13 +208,14 @@ constexpr auto captureKeyPress {
 
 constexpr auto captureMousePress {
     [](const MSG & msg) constexpr->void {
-        switch ((Mouse)msg.wParam) {
+        switch ((Mouse)msg.message) {
             case Mouse::RIGHT_HOLD:
-                flag::holdMouseRight.store(true, std::memory_order_relaxed);
+                flag::holdMouseRight.store(true);
                 break;
 
             case Mouse::RIGHT_RELESE:
-                flag::holdMouseRight.store(false, std::memory_order_relaxed);
+                flag::holdMouseRight.store(false);
+                flag::shouldFire.store(false);
                 break;
 
             default:
@@ -339,33 +342,32 @@ int main() {
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP "
         "to Close\n";
-    const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x84A3E0, {}, ReturnCode::ADDRESS) }; // Alien Swarm: Reactive
+    // const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x84A3E0, {}, ReturnCode::ADDRESS) }; // Alien Swarm: Reactive
+    // const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x00518C7C, {0xc,0x14,0x6e4}, ReturnCode::ADDRESS) }; // CodenameCure
     // Drop intervals callback
     const auto getEnemeyHover {
         [
         enemyHover{(LPVOID)0x0},
         friendHover{(LPVOID)0x0},
         &phandle,
-        &procEntry,
-        enemeyHoverAdress
+        &procEntry
         ] () mutable -> void {
+            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x00518C7C, {0xc, 0x14, 0x6e4}, ReturnCode::VALUE);
 
-            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), enemeyHoverAdress, {}, ReturnCode::VALUE);
-
-            if (enemyHover == game::noEnemeyHover) {
-                flag::shouldFire.store(false, std::memory_order_relaxed);
+            if (!enemyHover) {
+                flag::shouldFire.store(false);
                 return;
             }
 
             //  this pointer address is being recalculated each time you change game character
-            friendHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x0088DC14, {0x0, 0xA88, 0, 0xc0, 0xfb0}, ReturnCode::VALUE);
+            // friendHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x0088DC14, {0x0, 0xA88, 0, 0xc0, 0xfb0}, ReturnCode::VALUE);
 
-            if (friendHover != game::noFriendHover) {
-                flag::shouldFire.store(false, std::memory_order_relaxed);
-                return;
-            }
+            // if (friendHover != game::noFriendHover) {
+            //     flag::shouldFire.store(false);
+            //     return;
+            // }
 
-            flag::shouldFire.store(flag::triggerActive.load(std::memory_order_seq_cst), std::memory_order_relaxed);
+            flag::shouldFire.store(flag::triggerActive.load(std::memory_order_seq_cst));
         }
     };
     // run on separate thread
@@ -375,7 +377,7 @@ int main() {
         return constants::checkInterval;
     },
     []() constexpr->bool {
-        return flag::triggerActive.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst);
+        return flag::holdMouseRight.load(std::memory_order_relaxed) && flag::triggerActive.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst);
     }));
 
     if (!hoverInterval.get()->joinable()) {
@@ -391,16 +393,16 @@ int main() {
     auto clickInterval = std::make_unique<std::thread>(setInterval(
     [&gamewindow]() constexpr->void {
         std::thread([&gamewindow]() constexpr->void {
-            sendClick(gamewindow.load(std::memory_order_relaxed), WM_LBUTTONDOWN, VK_LBUTTON);
+            sendClick(gamewindow.load(std::memory_order_relaxed), WM_LBUTTONDOWN, WMSZ_BOTTOMLEFT );
         }).detach();
     },
     []() constexpr->uint_fast32_t {
-        return flag::triggerActive.load(std::memory_order_relaxed)
+        return flag::triggerActive.load(std::memory_order_seq_cst)
         ? constants::mouseDelay
         : constants::checkInterval;
     },
     []() constexpr->bool {
-        return flag::shouldFire.load(std::memory_order_relaxed) && !flag::terminate.load(std::memory_order_seq_cst);
+        return flag::shouldFire.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst);
     }));
 
     if (!clickInterval.get()->joinable()) {
