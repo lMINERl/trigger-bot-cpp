@@ -9,6 +9,7 @@
 #include <vector>
 #include <tlhelp32.h>
 #include <atomic>
+#include <map>
 
 enum class Keys {
     CAPSLOCK = VK_CAPITAL,
@@ -59,13 +60,13 @@ namespace constants {
 }
 
 constexpr auto findGameWindow {
-    [](LPCSTR windowName) constexpr->HWND {
+    [](LPCSTR windowName) constexpr noexcept ->HWND {
         return FindWindowEx(NULL, 0, 0, windowName);
     }
 };
 
 constexpr auto getWindowProcessId {
-    [](const HWND gameWindow) constexpr->DWORD {
+    [](const HWND gameWindow) constexpr noexcept ->DWORD {
         DWORD winProcId{0x0};
 
         if (!gameWindow) {
@@ -79,7 +80,7 @@ constexpr auto getWindowProcessId {
 };
 
 constexpr auto openWindowProcessId {
-    [](const DWORD winProcId) constexpr->HANDLE {
+    [](const DWORD winProcId) constexpr noexcept->HANDLE {
         if (!winProcId) {
             std::cout << "Failed to get process id\n";
             return static_cast<HANDLE>(0);
@@ -128,7 +129,7 @@ constexpr auto writeMemory {
 };
 
 constexpr auto readMemory {
-    [](const HANDLE phandle, const DWORD_PTR baseAddress, const std::vector<DWORD> offsets, const ReturnCode code) constexpr->LPVOID {
+    [](const HANDLE phandle, const DWORD_PTR baseAddress, const std::vector<DWORD> offsets, const ReturnCode code) constexpr noexcept->LPVOID {
 
         LPVOID address_PTR{(LPVOID)baseAddress};
         DWORD64 temp{0x0};
@@ -154,7 +155,7 @@ constexpr auto readMemory {
 };
 
 constexpr auto setInterval {
-    [](const std::function<void(void)> func, const std::function<uint_least32_t(void)> interval, const std::function<bool(void)> condition) {
+    [](const std::function<void(void)> func, const std::function<uint_least32_t(void)> interval, const std::function<bool(void)> condition) noexcept ->std::thread {
         auto th = std::thread([func, interval, condition]() {
             do {
                 if (std::invoke(condition)) {
@@ -171,20 +172,20 @@ constexpr auto setInterval {
 };
 
 constexpr auto sendKey {
-    [](const HWND windowName, UINT msg, WPARAM vkCode) constexpr->void {
+    [](const HWND windowName, UINT msg, WPARAM vkCode) constexpr noexcept->void {
         std::this_thread::sleep_for(std::chrono::milliseconds(constants::keyboardDelay));
         PostMessage(windowName, msg, vkCode, MAPVK_VSC_TO_VK);
     }
 };
 
 constexpr auto sendClick {
-    [](const HWND windowName, UINT msg, WPARAM vkCode) constexpr->void {
+    [](const HWND windowName, UINT msg, WPARAM vkCode) constexpr noexcept ->void {
         PostMessage(windowName, msg, vkCode, MAPVK_VSC_TO_VK);
     }
 };
 
 constexpr auto captureKeyPress {
-    [](const MSG & msg) constexpr->void {
+    [](const MSG & msg) constexpr noexcept->void {
         switch ((Keys)msg.wParam) {
             case Keys::CAPSLOCK: // toggle
                 if (msg.message == WM_KEYUP) {
@@ -207,7 +208,7 @@ constexpr auto captureKeyPress {
 };
 
 constexpr auto captureMousePress {
-    [](const MSG & msg) constexpr->void {
+    [](const MSG & msg) constexpr noexcept ->void {
         switch ((Mouse)msg.message) {
             case Mouse::RIGHT_HOLD:
                 flag::holdMouseRight.store(true);
@@ -225,7 +226,7 @@ constexpr auto captureMousePress {
 };
 
 constexpr auto lowLevelKeyboardProc {
-    [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr->LRESULT __stdcall {
+    [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr noexcept->LRESULT __stdcall {
         if (nCode != HC_ACTION) {
             return CallNextHookEx(global::kbrdHook, nCode, wParam, lParam);
         }
@@ -240,7 +241,7 @@ constexpr auto lowLevelKeyboardProc {
 };
 
 constexpr auto lowLevelMouseProc {
-    [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr->LRESULT __stdcall {
+    [] (int nCode, WPARAM wParam, LPARAM lParam) constexpr noexcept->LRESULT __stdcall {
         if (nCode != HC_ACTION) {
             return CallNextHookEx(global::mouseHook, nCode, wParam, lParam);
         }
@@ -253,8 +254,30 @@ constexpr auto lowLevelMouseProc {
     }
 };
 
+// function used for handling side effects like open close streams , closehandles .. etc
+// function that take a address variable/value and [terminate function  callback with the refrence to a value as argument]
+// returns a pair a value ".first" and update function ".second(newvlaue)"
+// .second has params of newval and [oncomplete when value updated with new value as parameter] and [terminate flag to call terminate function if provided .second(NULL,NULL,true)]
+template <typename T>
+constexpr auto setState {
+    [](const T & value, std::function<void(const T&)> terminateFunc = 0)constexpr->auto{
+        auto mp = std::make_pair(std::ref(value), [&value, terminateFunc](const T newVal = {}, const std::function<void(const T&)> onComplete = 0, bool terminate = false)constexpr  {
+            // this overwrite const values to allow direct mutation to values and variables yeah i know this is bad but for greater good
+            * (T*)& value = newVal ;
+
+            if (onComplete) {
+                std::invoke(onComplete, value);
+            }
+            if (terminate && terminateFunc) {
+                std::invoke(terminateFunc, value);
+                return;
+            }
+        });
+        return mp;
+    }
+};
+
 int main() {
-    // get window data HWND/ID/HANDLE
     const auto gamewindow {
         std::atomic<HWND>(findGameWindow(constants::windowName))
     };
@@ -352,7 +375,7 @@ int main() {
         &phandle,
         &procEntry
         ] () mutable -> void {
-            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x004FB9F8, {0x24, 0x38, 0x4, 0x97C}, ReturnCode::VALUE);
+            enemyHover = readMemory(phandle.load(std::memory_order_relaxed), (DWORD_PTR) procEntry.get()->modBaseAddr + 0x004FB9F8, {0x24, 0x38, 0x4, 0x97C}, ReturnCode::VALUE);
 
             if (!enemyHover) {
                 flag::shouldFire.store(false);
