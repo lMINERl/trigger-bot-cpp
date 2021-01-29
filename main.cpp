@@ -164,7 +164,7 @@ constexpr auto setInterval {
 
                 std::this_thread::sleep_for(
                     std::chrono::milliseconds(std::invoke(interval)));
-            } while (!flag::terminate.load(std::memory_order_seq_cst));
+            } while (!flag::terminate.load());
         });
         th.detach();
         return th;
@@ -189,7 +189,7 @@ constexpr auto captureKeyPress {
         switch ((Keys)msg.wParam) {
             case Keys::CAPSLOCK: // toggle
                 if (msg.message == WM_KEYUP) {
-                    flag::triggerActive.store(!flag::triggerActive.load(std::memory_order_seq_cst));
+                    flag::triggerActive.store(!flag::triggerActive.load());
                     flag::shouldFire.store(flag::triggerActive.load(std::memory_order_relaxed)
                         ? flag::shouldFire.load(std::memory_order_relaxed)
                         : false);
@@ -254,57 +254,78 @@ constexpr auto lowLevelMouseProc {
     }
 };
 
-// function used for handling side effects like open close streams , closehandles .. etc
-// function that take a address variable/value and [terminate function  callback with the refrence to a value as argument]
-// returns a pair a value ".first" and update function ".second(newvlaue)"
-// .second has params of newval and [oncomplete when value updated with new value as parameter] and [terminate flag to call terminate function if provided .second(NULL,NULL,true)]
+/** SetState Doc
+ * function that handles sideeffects -note [ this function lies to you but keeps you from making errors ]
+ * @param value the state value
+ * @param [onInitialize] callback function runs after value is been initialized to first pair ".first"
+ * @return std::pair value and function to set the first pair value
+ * @note the second function of the returned pair has
+ *  param value  value to be set
+ *  param [onComplete] callback after value has been set
+ * @example
+ *  int main(){
+
+        std::function<int(int)> mainReturn { [](int exitCode) constexpr->int {
+                std::cout << "main" << std::endl;
+                return exitCode;
+            }
+        };
+        const auto user32Lib = setState<HMODULE>(LoadLibrary("user32.dll"), [&mainReturn](const auto & hMod)mutable {
+            mainReturn = [mainReturn, &hMod](int exitCode)constexpr {
+                std::cout << "free Lib" << std::endl;
+                FreeLibrary(hMod);
+                return mainReturn(exitCode);
+            };
+        });
+        retunr mainReturn(EXIT_SUCCESS);
+    }
+*/
 template <typename T>
 constexpr auto setState {
-    [](const T & value, std::function<void(const T&)> terminateFunc = 0)constexpr->auto{
-        auto mp = std::make_pair(std::ref(value), [&value, terminateFunc](const T newVal = {}, const std::function<void(const T&)> onComplete = 0, bool terminate = false)constexpr  {
+    [](const T & value, std::function<void(const T&)> onInitialize = 0)->auto{
+        auto mp = std::make_pair(std::ref(value), [&value, onInitialize](const T newVal = {}, const std::function<void(const T&)> onComplete = 0)constexpr  {
             // this overwrite const values to allow direct mutation to values and variables yeah i know this is bad but for greater good
             * (T*)& value = newVal ;
 
             if (onComplete) {
                 std::invoke(onComplete, value);
             }
-            if (terminate && terminateFunc) {
-                std::invoke(terminateFunc, value);
-                return;
-            }
         });
+
+        if (onInitialize ) {
+            std::invoke(onInitialize, value);
+        }
+
         return mp;
     }
 };
 
 int main() {
+    // used for cleaning side-effects as program progress should be
+    // re-initialized after each side effect
+    std::function<int(int)> mainReturn { [](int exitCode) constexpr->int {
+            return exitCode;
+        }
+    };
     const auto gamewindow {
         std::atomic<HWND>(findGameWindow(constants::windowName))
     };
     const auto winProcId {
-        gamewindow.load(std::memory_order_seq_cst)
-        ? getWindowProcessId(gamewindow.load(std::memory_order_seq_cst))
+        gamewindow.load()
+        ? getWindowProcessId(gamewindow.load())
         : 0x0
     };
-    const auto phandle {
-        winProcId
-        ? std::atomic<HANDLE>(openWindowProcessId(winProcId))
-        : nullptr
+    auto phandle = winProcId ? std::atomic<HANDLE>(openWindowProcessId(winProcId)) : nullptr;
+    mainReturn = [&phandle, mainReturn](int exitCode) constexpr->int {
+        CloseHandle(phandle.load());
+        return mainReturn(exitCode);
     };
     const auto gameHandle {
         GetModuleHandle(constants::moduleName)
     };
-    // used for cleaning side-effects as program progress should be
-    // re-initialized after each side effect
-    std::function<int(int)> mainReturn {
-        [&phandle](int exitCode) constexpr->int {
-            CloseHandle(phandle.load(std::memory_order::memory_order_seq_cst));
-            return exitCode;
-        }
-    };
 
     // the window specified are not there
-    if (!winProcId || !gamewindow.load(std::memory_order_seq_cst) || !phandle.load(std::memory_order_seq_cst)) {
+    if (!winProcId || !gamewindow.load() || !phandle.load()) {
         std::cout << constants::windowName << " Game not found \n";
         return mainReturn(EXIT_FAILURE);
     }
@@ -318,9 +339,9 @@ int main() {
     const auto procEntryThreadId = GetThreadId(procEntry.get()->hModule);
     // loggs << should be edited or make logger
     std::cout << "Game: " << constants::windowName
-        << "\nWindow HWND: " << gamewindow.load(std::memory_order_seq_cst)
+        << "\nWindow HWND: " << gamewindow.load()
         << "\nProcessId: " << winProcId
-        << "\nHandle: " << phandle.load(std::memory_order_seq_cst)
+        << "\nHandle: " << phandle.load()
         << "\nmodBaseAddress: " << std::hex << (DWORD_PTR)modEntry.get()->modBaseAddr
         << "\nMemory Check Interval: " << constants::checkInterval
         << "\nMouse Interval: " << constants::mouseDelay
@@ -365,8 +386,8 @@ int main() {
 
     std::cout << "Trigger bot is activated (aim to enemies to auto shoot)\nPGUP "
         "to Close\n";
-    // const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x84A3E0, {}, ReturnCode::ADDRESS) }; // Alien Swarm: Reactive
-    // const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(std::memory_order_seq_cst), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x00518C7C, {0xc,0x14,0x6e4}, ReturnCode::ADDRESS) }; // CodenameCure
+    // const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x84A3E0, {}, ReturnCode::ADDRESS) }; // Alien Swarm: Reactive
+    // const auto enemeyHoverAdress{ (DWORD_PTR)readMemory(phandle.load(), (DWORD_PTR)procEntry.get()->modBaseAddr + 0x00518C7C, {0xc,0x14,0x6e4}, ReturnCode::ADDRESS) }; // CodenameCure
     // Drop intervals callback
     const auto getEnemeyHover {
         [
@@ -390,7 +411,7 @@ int main() {
             //     return;
             // }
 
-            flag::shouldFire.store(flag::triggerActive.load(std::memory_order_seq_cst));
+            flag::shouldFire.store(flag::triggerActive.load());
         }
     };
     // run on separate thread
@@ -400,7 +421,7 @@ int main() {
         return constants::checkInterval;
     },
     []() constexpr->bool {
-        return flag::holdMouseRight.load(std::memory_order_relaxed) && flag::triggerActive.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst);
+        return flag::holdMouseRight.load(std::memory_order_relaxed) && flag::triggerActive.load() && !flag::terminate.load();
     }));
 
     if (!hoverInterval.get()->joinable()) {
@@ -416,16 +437,16 @@ int main() {
     auto clickInterval = std::make_unique<std::thread>(setInterval(
     [&gamewindow]() constexpr->void {
         std::thread([&gamewindow]() constexpr->void {
-            sendClick(gamewindow.load(std::memory_order_relaxed), WM_LBUTTONDOWN, WMSZ_BOTTOMLEFT );
+            sendClick(gamewindow.load(), WM_LBUTTONDOWN, WMSZ_BOTTOMLEFT );
         }).detach();
     },
     []() constexpr->uint_fast32_t {
-        return flag::triggerActive.load(std::memory_order_seq_cst)
+        return flag::triggerActive.load()
         ? constants::mouseDelay
         : constants::checkInterval;
     },
     []() constexpr->bool {
-        return flag::shouldFire.load(std::memory_order_seq_cst) && !flag::terminate.load(std::memory_order_seq_cst);
+        return flag::shouldFire.load() && !flag::terminate.load();
     }));
 
     if (!clickInterval.get()->joinable()) {
@@ -439,7 +460,7 @@ int main() {
     }
 
     // exit program on page up
-    while ((GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) && !flag::terminate.load(std::memory_order_seq_cst)) {
+    while ((GetMessage(&global::msg, constants::consoleHWND, 0, 0) != 0) && !flag::terminate.load()) {
         std::thread([]() constexpr->void {
             captureKeyPress(global::msg);
         }).detach();
