@@ -254,57 +254,14 @@ constexpr auto lowLevelMouseProc {
     }
 };
 
-/** SetState Doc
- * function that handles sideeffects -note [ this function lies to you but keeps you from making errors ]
- * @param value the state value
- * @param [onInitialize] callback function runs after value is been initialized to first pair ".first"
- * @return std::pair value and function to set the first pair value
- * @note the second function of the returned pair has
- *  param value  value to be set
- *  param [onComplete] callback after value has been set
- * @example
- *  int main(){
-
-        std::function<int(int)> mainReturn { [](int exitCode) constexpr->int {
-                std::cout << "main" << std::endl;
-                return exitCode;
-            }
-        };
-        const auto user32Lib = setState<HMODULE>(LoadLibrary("user32.dll"), [&mainReturn](const auto & hMod)mutable {
-            mainReturn = [mainReturn, &hMod](int exitCode)constexpr {
-                std::cout << "free Lib" << std::endl;
-                FreeLibrary(hMod);
-                return mainReturn(exitCode);
-            };
-        });
-        retunr mainReturn(EXIT_SUCCESS);
-    }
-*/
-template <typename T>
-constexpr auto setState {
-    [](const T & value, std::function<void(const T&)> onInitialize = 0)->auto{
-        auto mp = std::make_pair(std::ref(value), [&value, onInitialize](const T newVal = {}, const std::function<void(const T&)> onComplete = 0)constexpr  {
-            // this overwrite const values to allow direct mutation to values and variables yeah i know this is bad but for greater good
-            * (T*)& value = newVal ;
-
-            if (onComplete) {
-                std::invoke(onComplete, value);
-            }
-        });
-
-        if (onInitialize ) {
-            std::invoke(onInitialize, value);
-        }
-
-        return mp;
-    }
-};
-
 int main() {
     // used for cleaning side-effects as program progress should be
     // re-initialized after each side effect
-    std::function<int(int)> mainReturn { [](int exitCode) constexpr->int {
+    std::function<int(int)> mainReturn {
+        [](int exitCode) constexpr->int {
+            std::cout << "1" << std::endl;
             return exitCode;
+
         }
     };
     const auto gamewindow {
@@ -315,8 +272,9 @@ int main() {
         ? getWindowProcessId(gamewindow.load())
         : 0x0
     };
-    auto phandle = winProcId ? std::atomic<HANDLE>(openWindowProcessId(winProcId)) : nullptr;
+    const auto phandle = winProcId ? std::atomic<HANDLE>(openWindowProcessId(winProcId)) : nullptr;
     mainReturn = [&phandle, mainReturn](int exitCode) constexpr->int {
+        std::cout << "2" << std::endl;
         CloseHandle(phandle.load());
         return mainReturn(exitCode);
     };
@@ -369,6 +327,7 @@ int main() {
         return mainReturn(EXIT_FAILURE);
     } else {
         mainReturn = [mainReturn](int exitCode) constexpr->int {
+            std::cout << "3" << std::endl;
             UnhookWindowsHookEx(global::kbrdHook);
             return mainReturn(exitCode);
         };
@@ -379,6 +338,7 @@ int main() {
         return mainReturn(EXIT_FAILURE);
     } else {
         mainReturn = [mainReturn](int exitCode) constexpr->int {
+            std::cout << "4" << std::endl;
             UnhookWindowsHookEx(global::mouseHook);
             return mainReturn(exitCode);
         };
@@ -426,6 +386,7 @@ int main() {
 
     if (!hoverInterval.get()->joinable()) {
         mainReturn = [&hoverInterval, mainReturn](int exitCode) constexpr->int {
+            std::cout << "5" << std::endl;
             hoverInterval.reset(nullptr);
             return mainReturn(exitCode);
         };
@@ -451,6 +412,7 @@ int main() {
 
     if (!clickInterval.get()->joinable()) {
         mainReturn = [&clickInterval, mainReturn](int exitCode) constexpr->int {
+            std::cout << "6" << std::endl;
             clickInterval.reset(nullptr);
             return mainReturn(exitCode);
         };
