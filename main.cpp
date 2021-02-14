@@ -86,7 +86,7 @@ constexpr auto openWindowProcessId {
             return static_cast<HANDLE>(0);
         }
 
-        return OpenProcess(PROCESS_ALL_ACCESS, FALSE, winProcId);
+        return OpenProcess(PROCESS_ALL_ACCESS, TRUE, winProcId);
     }
 };
 
